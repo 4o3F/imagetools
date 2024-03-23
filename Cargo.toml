@@ -1,0 +1,16 @@
+[package]
+name = "imagetools"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+chrono = "0.4.35"
+cocotools = {path = "./cocotools"}
+image = "0.25.0"
+imageproc = "0.24.0"
+ndarray = "0.15.6"
+rand = "0.8.5"
+serde = {version = "1", features = ["derive"]}
+serde_json = "1.0.114"
+# pyo3 = "0.20.3"
+tokio = { version = "1", features = ["full"] }
