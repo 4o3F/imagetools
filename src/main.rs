@@ -5,22 +5,12 @@ use std::{
 };
 
 use cocotools::{
-    coco::{
-        self,
-        object_detection::{
-            Annotation, Bbox, Category, Dataset, HashmapDataset, Image, Rle, Segmentation,
-        },
-    },
-    mask::{conversions::convert_coco_segmentation, utils::Area},
-    COCO,
+    coco::object_detection::{Annotation, Bbox, Category, Dataset, Image, Rle, Segmentation},
+    mask::utils::Area,
 };
-use image::{imageops::FilterType, GrayImage, ImageBuffer, Luma, Rgb, RgbImage};
-use imageproc::{
-    contours::{BorderType, Contour},
-    pixelops::interpolate,
-    point::Point,
-};
-use rand::Rng;
+use image::{imageops::FilterType, Rgb, RgbImage};
+use imageproc::pixelops::interpolate;
+use opencv::{core::MatTrait, imgproc};
 use tokio::{sync::Semaphore, task::JoinSet};
 
 #[allow(dead_code)]
@@ -93,13 +83,13 @@ fn mask_image_array(image: &RgbImage, rgb: Rgb<u8>) -> ndarray::Array2<u8> {
 
 #[allow(dead_code)]
 async fn rgb2rle() {
-    let BASE_PATH =
+    let base_path =
         "D:\\Documents\\Competitions\\ChallengeCup\\NWPU_YRCC2\\datasets\\resized_labels";
-    let mut COLOR_CLASS_MAP = HashMap::<Rgb<u8>, u32>::new();
-    COLOR_CLASS_MAP.insert(Rgb([0, 0, 0]), 0);
-    COLOR_CLASS_MAP.insert(Rgb([0, 255, 0]), 1);
-    COLOR_CLASS_MAP.insert(Rgb([0, 255, 255]), 2);
-    COLOR_CLASS_MAP.insert(Rgb([255, 0, 255]), 3);
+    let mut color_class_map = HashMap::<Rgb<u8>, u32>::new();
+    color_class_map.insert(Rgb([0, 0, 0]), 0);
+    color_class_map.insert(Rgb([0, 255, 0]), 1);
+    color_class_map.insert(Rgb([0, 255, 255]), 2);
+    color_class_map.insert(Rgb([255, 0, 255]), 3);
 
     let dataset = Arc::new(Mutex::new(Dataset {
         info: Default::default(),
@@ -139,7 +129,7 @@ async fn rgb2rle() {
     let image_count = Arc::new(Mutex::new(0));
     let annotation_count = Arc::new(Mutex::new(0));
     // Walk through all images in BASE_PATH
-    let entries = fs::read_dir(BASE_PATH).unwrap();
+    let entries = fs::read_dir(base_path).unwrap();
     for entry in entries {
         let entry = entry.unwrap();
         if entry
@@ -152,7 +142,7 @@ async fn rgb2rle() {
         {
             let permit = Arc::clone(&sem);
             let dataset = Arc::clone(&dataset);
-            let color_class_map = COLOR_CLASS_MAP.clone();
+            let color_class_map = color_class_map.clone();
             let image_count = Arc::clone(&image_count);
             let annotation_count = Arc::clone(&annotation_count);
             threads.spawn(async move {
@@ -237,13 +227,14 @@ async fn rgb2rle() {
 
 #[tokio::main]
 async fn main() {
-    let BASE_PATH =
-        "D:\\Documents\\Competitions\\ChallengeCup\\NWPU_YRCC2\\datasets\\resized_labels_test";
-    let mut COLOR_CLASS_MAP = HashMap::<Rgb<u8>, u32>::new();
-    COLOR_CLASS_MAP.insert(Rgb([0, 0, 0]), 0);
-    COLOR_CLASS_MAP.insert(Rgb([0, 255, 0]), 1);
-    COLOR_CLASS_MAP.insert(Rgb([0, 255, 255]), 2);
-    COLOR_CLASS_MAP.insert(Rgb([255, 0, 255]), 3);
+    let base_path =
+        "D:\\Documents\\Competitions\\ChallengeCup\\NWPU_YRCC2\\datasets\\resized_labels";
+    // let BASE_PATH = "./inputs";
+    let mut color_class_map = HashMap::<Rgb<u8>, u32>::new();
+    color_class_map.insert(Rgb([0, 0, 0]), 0);
+    color_class_map.insert(Rgb([0, 255, 0]), 1);
+    color_class_map.insert(Rgb([0, 255, 255]), 2);
+    color_class_map.insert(Rgb([255, 0, 255]), 3);
 
     let dataset = Arc::new(Mutex::new(Dataset {
         info: Default::default(),
@@ -281,7 +272,7 @@ async fn main() {
     let sem = Arc::new(Semaphore::new(10));
 
     // Walk through all images in BASE_PATH
-    let entries = fs::read_dir(BASE_PATH).unwrap();
+    let entries = fs::read_dir(base_path).unwrap();
     for entry in entries {
         let entry = entry.unwrap();
         if entry
@@ -293,156 +284,197 @@ async fn main() {
             .ends_with(".png")
         {
             let permit = Arc::clone(&sem);
-            let color_class_map = COLOR_CLASS_MAP.clone();
+            let color_class_map = color_class_map.clone();
             threads.spawn(async move {
                 // Limit tasks to 10
                 let _permit = permit.acquire().await.unwrap();
 
                 let img = image::open(entry.path()).unwrap().into_rgb8();
-                // First process the image without acquiring the lock, boost performance
 
                 let mut labels = Vec::<String>::new();
                 for (color, class_id) in color_class_map.clone().iter() {
                     // Output image for this class
                     let mut output_img = img.clone();
-                    // Test only
-                    if color != &Rgb([255, 0, 255]) {
-                        continue;
-                    }
+                    // TODO: remove this test only code
+                    // if color != &Rgb([0, 255, 0]) {
+                    //     continue;
+                    // }
+
+                    let mut mat = opencv::core::Mat::new_rows_cols_with_default(
+                        512,
+                        512,
+                        opencv::core::CV_8U,
+                        opencv::core::Scalar::all(0.),
+                    )
+                    .unwrap();
+                    // println!("{:?}", mat);
 
                     // Turn rgb label to gray image mask
-                    let mut mask = GrayImage::new(img.width(), img.height());
                     for (x, y, pixel) in img.enumerate_pixels() {
                         let Rgb([r, g, b]) = pixel;
                         let Rgb([tr, tg, tb]) = color;
                         if r == tr && g == tg && b == tb {
-                            mask.put_pixel(x, y, Luma([255]))
+                            // Set mat at x,y to 255
+                            *mat.at_2d_mut::<u8>(x as i32, y as i32).unwrap() = 255;
                         } else {
-                            mask.put_pixel(x, y, Luma([0]))
+                            *mat.at_2d_mut::<u8>(x as i32, y as i32).unwrap() = 0;
                         }
                     }
 
-                    mask.save("./mask.png").unwrap();
+                    let mut contours =
+                        opencv::core::Vector::<opencv::core::Vector<opencv::core::Point>>::new();
 
-                    // Find and filter out contours on the mask
-                    let mut contours: Vec<Contour<i32>> =
-                        imageproc::contours::find_contours::<i32>(&mask);
+                    // Same level next
+                    // Same level previous
+                    // Child
+                    // Parent
+                    let mut hierarchy = opencv::core::Vector::<opencv::core::Vec4i>::new();
+                    imgproc::find_contours_with_hierarchy_def(
+                        &mat,
+                        &mut contours,
+                        &mut hierarchy,
+                        imgproc::RETR_CCOMP,
+                        imgproc::CHAIN_APPROX_SIMPLE,
+                    )
+                    .unwrap();
 
-                    for contour in contours.iter() {
-                        if contour.points[0].x == 14 && contour.points[0].y == 174 {
-                            println!("{:?}", contour);
-                        }
-                    }
+                    // println!("{:?}", contours);
+                    // println!("{:?}", hierarchy);
 
-                    let mut combined_contours: Vec<Contour<i32>> = contours.clone();
+                    let mut combined_contours: Vec<Vec<(i32, i32)>> = Vec::new();
 
-                    let mut count = 0;
+                    // Now go through all the hierarchy and combine contours
+                    let mut current_index: i32 = 0;
+                    while current_index != -1 && contours.len() > 0 {
+                        let current_contour = contours.get(current_index as usize).unwrap();
+                        let current_hierarchy = hierarchy.get(current_index as usize).unwrap();
 
-                    {
-                        let mut index: usize = combined_contours.len();
-                        for contour in contours.iter_mut().rev() {
-                            if contour.points.len() < 3 {
-                                combined_contours.remove(index - 1);
-                            } else if contour.parent.is_some()
-                                && contour.border_type == BorderType::Hole
-                            {
-                                let parent: usize = contour.parent.unwrap();
+                        let mut parent_points = Vec::<(i32, i32)>::new();
+                        current_contour.iter().for_each(|point| {
+                            parent_points.push((point.x, point.y));
+                        });
+                        if current_hierarchy.get(2).unwrap() != &-1 {
+                            // Contain child, go through holes
+                            let mut child_contour_index = *current_hierarchy.get(2).unwrap();
+                            loop {
+                                let child_contour =
+                                    contours.get(child_contour_index as usize).unwrap();
+                                let child_hierarchy =
+                                    hierarchy.get(child_contour_index as usize).unwrap();
 
-                                // Combine two contours
-                                // loop through parent and child points, find the min distance point
+                                let mut child_points = Vec::<(i32, i32)>::new();
+                                child_contour.iter().for_each(|point| {
+                                    child_points.push((point.x, point.y));
+                                });
+                                // Find the nearest point between child_points and contour_points
                                 let mut min_distance = f64::MAX;
                                 let mut child_index = 0;
                                 let mut parent_index = 0;
-                                for (i, parent_point) in
-                                    combined_contours[parent].points.iter().enumerate()
-                                {
-                                    for (j, child_point) in contour.points.iter().enumerate() {
-                                        //println!("x distance: {:?}", (parent_point.x - child_point.x));
+                                for (i, parent_point) in parent_points.iter().enumerate() {
+                                    for (j, child_point) in child_points.iter().enumerate() {
                                         let distance = f64::from(
-                                            (parent_point.x - child_point.x).pow(2)
-                                                + (parent_point.y - child_point.y).pow(2),
+                                            (parent_point.0 - child_point.0).pow(2)
+                                                + (parent_point.1 - child_point.1).pow(2),
                                         )
                                         .sqrt();
                                         if distance < min_distance {
                                             min_distance = distance;
-                                            parent_index = i;
                                             child_index = j;
+                                            parent_index = i;
                                         }
                                     }
                                 }
 
-                                // combine two contours
-                                let mut new_points = Vec::<Point<i32>>::new();
-                                new_points.extend(
-                                    combined_contours[parent]
-                                        .points
-                                        .iter()
-                                        .take(parent_index + 1),
-                                );
-                                new_points.extend(contour.points.iter().skip(child_index));
-                                new_points.extend(contour.points.iter().take(child_index + 1));
-                                new_points.extend(
-                                    combined_contours[parent]
-                                        .points
-                                        .iter()
-                                        .skip(parent_index + 1),
-                                );
-                                combined_contours[parent].points = new_points;
-                                combined_contours.remove(index - 1);
+                                // Combine two contours
+                                let mut new_points = Vec::<(i32, i32)>::new();
+                                new_points.extend(parent_points.iter().take(parent_index + 1));
+                                new_points.extend(child_points.iter().skip(child_index));
+                                new_points.extend(child_points.iter().take(child_index + 1));
+                                new_points.extend(parent_points.iter().skip(parent_index));
+                                parent_points = new_points;
+                                // println!("Combined child");
+                                child_contour_index = *child_hierarchy.get(0).unwrap();
+                                if child_contour_index == -1 {
+                                    break;
+                                }
                             }
-                            index = index - 1;
                         }
+                        // No more child
+                        if parent_points.len() > 3 {
+                            // Can't form valid polygon
+                            combined_contours.push(parent_points);
+                        }
+
+                        current_index = *current_hierarchy.get(0).unwrap();
                     }
 
-                    // Combine child contours to parent contours
-                    for contour in combined_contours {
+                    // println!("{:?}", combined_contours);
+
+                    // TODO: Remove this test only code
+                    // let mut count = 0;
+                    // for contour in combined_contours.iter() {
+                    //     let result_img = imageproc::drawing::draw_antialiased_polygon(
+                    //         &output_img,
+                    //         contour
+                    //             .iter()
+                    //             .map(|point| Point {
+                    //                 x: point.1 as i32,
+                    //                 y: point.0 as i32,
+                    //             })
+                    //             .collect::<Vec<Point<i32>>>()
+                    //             .as_slice(),
+                    //         Rgb([255, 0, 0]),
+                    //         interpolate
+                    //     );
+                    //     result_img
+                    //         .save(format!(
+                    //             "./outputs/images/{}/{}_{}",
+                    //             class_id,
+                    //             count,
+                    //             entry.file_name().into_string().unwrap().to_string()
+                    //         ))
+                    //         .unwrap();
+                    //     count = count + 1;
+                    // }
+
+                    for contour in combined_contours.iter() {
                         let mut result = String::new();
                         result.push_str(class_id.to_string().as_str());
                         result.push(' ');
-                        if contour.points.len() < 3 {
-                            continue;
-                        }
-                        contour.points.iter().for_each(|point| {
+                        contour.iter().for_each(|point| {
                             result.push_str(&format!(
                                 "{} ",
-                                (f64::from(point.x) / f64::from(img.width()))
+                                (f64::from(point.1) / f64::from(img.width()))
                             ));
                             result.push_str(&format!(
                                 "{} ",
-                                f64::from(point.y) / f64::from(img.height())
+                                f64::from(point.0) / f64::from(img.height())
                             ));
                         });
-
-                        if count == 177 {
-                            println!("{:?}", contour)
-                        }
-
-                        // let result_img = imageproc::drawing::draw_polygon(
-                        //     &output_img,
-                        //     //contour.points.iter().map(|&point| Point{x:f32::from(point.x),y:f32::from(point.y)}).collect::<Vec<Point<f32>>>().as_slice(),
-                        //     &contour.points,
-                        //     Rgb([255, 0, 0]),
-                        //     // interpolate,
-                        // );
-                        // result_img
-                        //     .save(format!(
-                        //         "./outputs/images/{}/{}_{}",
-                        //         class_id,
-                        //         count,
-                        //         entry.file_name().into_string().unwrap().to_string()
-                        //     ))
-                        //     .unwrap();
                         result.push('\n');
                         labels.push(result);
-                        count = count + 1;
+
+                        imageproc::drawing::draw_antialiased_polygon_mut(
+                            &mut output_img,
+                            contour
+                                .iter()
+                                .map(|point| imageproc::point::Point {
+                                    x: point.1 as i32,
+                                    y: point.0 as i32,
+                                })
+                                .collect::<Vec<imageproc::point::Point<i32>>>()
+                                .as_slice(),
+                            Rgb([255, 128, 0]),
+                            interpolate,
+                        );
                     }
-                    // output_img
-                    //     .save(format!(
-                    //         "./outputs/images/{}/{}",
-                    //         class_id,
-                    //         entry.file_name().into_string().unwrap().to_string()
-                    //     ))
-                    //     .unwrap();
+                    output_img
+                        .save(format!(
+                            "./outputs/images/{}/{}",
+                            class_id,
+                            entry.file_name().into_string().unwrap()
+                        ))
+                        .unwrap();
                 }
                 fs::write(
                     format!(

@@ -1,6 +1,5 @@
 use std::iter::zip;
 
-use image;
 use imageproc::{drawing::draw_hollow_rect_mut, rect::Rect};
 use rand::Rng;
 

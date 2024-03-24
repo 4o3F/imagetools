@@ -1,5 +1,4 @@
 use clap::ValueEnum;
-use image;
 use imageproc::contours;
 use imageproc::drawing;
 use ndarray::{s, ArrayViewMut, ShapeBuilder};
