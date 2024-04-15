@@ -9,10 +9,11 @@ use cocotools::{
     mask::utils::Area,
 };
 use image::{Rgb, RgbImage};
+use itertools::Itertools;
 use opencv::{core::MatTrait, imgproc};
 use rand::seq::SliceRandom;
 use rand::thread_rng;
-use tokio::{sync::Semaphore, task::JoinSet};
+use tokio::{fs::File, io::AsyncWriteExt, sync::Semaphore, task::JoinSet};
 #[allow(dead_code)]
 pub async fn gray_filter() {
     let path = "E:\\YRCC_ori\\trainannot";
@@ -57,8 +58,46 @@ pub async fn gray_filter() {
 }
 
 #[allow(dead_code)]
+pub async fn count_types() {
+    let path = "E:\\卫星数据\\labels\\label_outputs";
+    let entries = fs::read_dir(path).unwrap();
+    let type_map = Arc::new(Mutex::new(HashMap::<u8, u32>::new()));
+    let mut threads = JoinSet::new();
+    for entry in entries {
+        let entry = entry.unwrap();
+        let type_map = Arc::clone(&type_map);
+        threads.spawn(async move {
+            let content = fs::read_to_string(entry.path()).unwrap();
+            let mut current_type_map = HashMap::<u8, u32>::new();
+            content.lines().for_each(|line| {
+                let class_id = line
+                    .split_whitespace()
+                    .next()
+                    .unwrap()
+                    .parse::<u8>()
+                    .unwrap();
+                let count = current_type_map.entry(class_id).or_insert(0);
+                *count += 1;
+            });
+            let mut type_map = type_map.lock().unwrap();
+            for (class_id, count) in current_type_map.iter() {
+                let total_count = type_map.entry(*class_id).or_insert(0);
+                *total_count += count;
+            }
+        });
+    }
+    while threads.join_next().await.is_some() {}
+    let type_map = type_map.lock().unwrap();
+    for key in type_map.keys().sorted() {
+        let class_id = key;
+        let count = type_map.get(class_id).unwrap();
+        println!("{}: {}", class_id, count);
+    }
+}
+
+#[allow(dead_code)]
 pub fn split_dataset() {
-    let path = "E:\\卫星数据\\yolo\\labels";
+    let path = "E:\\YRCC_ori\\yolo\\labels";
     let entries = fs::read_dir(path).unwrap();
     let mut names = Vec::<String>::new();
     for entry in entries {
@@ -70,8 +109,8 @@ pub fn split_dataset() {
     let train_count = (names.len() as f64 * 0.8).floor() as usize;
     let train_names = names.iter().take(train_count);
     let val_names = names.iter().skip(train_count);
-    let train_path = "E:\\卫星数据\\yolo\\train.txt";
-    let val_path = "E:\\卫星数据\\yolo\\val.txt";
+    let train_path = "E:\\YRCC_ori\\yolo\\train.txt";
+    let val_path = "E:\\YRCC_ori\\yolo\\val.txt";
     let mut train_content = String::new();
     let mut val_content = String::new();
     train_names.for_each(|name| {
@@ -266,8 +305,8 @@ async fn rgb2rle() {
 #[allow(dead_code)]
 pub async fn rgb2yolo() {
     // let base_path =
-    //     "D:\\Documents\\Competitions\\ChallengeCup\\NWPU_YRCC2\\datasets\\cropped_labels";
-    let base_path = "E:\\卫星数据\\yolo\\label_imgs";
+    // "D:\\Documents\\Competitions\\ChallengeCup\\NWPU_YRCC2\\datasets\\resized_labels_768";
+    let base_path = "E:\\卫星数据\\labels\\final";
     let mut color_class_map = HashMap::<Rgb<u8>, u32>::new();
     color_class_map.insert(Rgb([0, 0, 0]), 0);
     color_class_map.insert(Rgb([0, 255, 0]), 1);
@@ -299,28 +338,8 @@ pub async fn rgb2yolo() {
         });
         dataset_guard.categories.push(Category {
             id: 2,
-            name: "shore_ice".to_string(),
-            supercategory: "shore_ice".to_string(),
-        });
-        dataset_guard.categories.push(Category {
-            id: 3,
-            name: "stream_ice".to_string(),
-            supercategory: "stream_ice".to_string(),
-        });
-        dataset_guard.categories.push(Category {
-            id: 4,
-            name: "vertical_ice".to_string(),
-            supercategory: "vertical_ice".to_string(),
-        });
-        dataset_guard.categories.push(Category {
-            id: 5,
-            name: "horizontal_ice".to_string(),
-            supercategory: "horizontal_ice".to_string(),
-        });
-        dataset_guard.categories.push(Category {
-            id: 6,
-            name: "snow".to_string(),
-            supercategory: "snow".to_string(),
+            name: "ice".to_string(),
+            supercategory: "ice".to_string(),
         });
     }
     let mut threads = JoinSet::new();
@@ -346,6 +365,10 @@ pub async fn rgb2yolo() {
 
                 let img = image::open(entry.path()).unwrap().into_rgb8();
 
+                if !crate::images::check_valid_pixel_count(&img) {
+                    return ();
+                }
+
                 let mut labels = Vec::<String>::new();
                 for (color, class_id) in color_class_map.clone().iter() {
                     // Output image for this class
@@ -356,8 +379,8 @@ pub async fn rgb2yolo() {
                     // }
 
                     let mut mat = opencv::core::Mat::new_rows_cols_with_default(
-                        1024,
-                        1024,
+                        768,
+                        768,
                         opencv::core::CV_8U,
                         opencv::core::Scalar::all(0.),
                     )
@@ -389,7 +412,7 @@ pub async fn rgb2yolo() {
                         &mut contours,
                         &mut hierarchy,
                         imgproc::RETR_CCOMP,
-                        imgproc::CHAIN_APPROX_SIMPLE,
+                        imgproc::CHAIN_APPROX_TC89_KCOS,
                     )
                     .unwrap();
 
@@ -455,7 +478,7 @@ pub async fn rgb2yolo() {
                             }
                         }
                         // No more child
-                        if parent_points.len() > 3 {
+                        if parent_points.len() > 6 {
                             // Can't form valid polygon
                             combined_contours.push(parent_points);
                         }
@@ -506,18 +529,20 @@ pub async fn rgb2yolo() {
                         .unwrap();
                     */
                 }
-                fs::write(
-                    format!(
-                        "./outputs/labels/{}",
-                        entry
-                            .file_name()
-                            .into_string()
-                            .unwrap()
-                            .to_string()
-                            .replace(".png", ".txt")
-                    ),
-                    labels.concat(),
-                )
+                File::create(format!(
+                    "{}/../label_outputs/{}",
+                    base_path,
+                    entry
+                        .file_name()
+                        .into_string()
+                        .unwrap()
+                        .to_string()
+                        .replace(".png", ".txt")
+                ))
+                .await
+                .unwrap()
+                .write_all(labels.concat().as_bytes())
+                .await
                 .unwrap();
                 println!(
                     "{} finished process",

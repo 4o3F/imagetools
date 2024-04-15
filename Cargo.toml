@@ -18,3 +18,5 @@ opencv = { version = "0.89.0", default-features = false, features = [
     "clang-runtime",
     "imgproc",
 ] }
+lab = "0.11.0"
+itertools = "0.12.1"
