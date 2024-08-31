@@ -5,7 +5,7 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use image::{Luma, Rgb, RgbImage};
+use image::{GrayImage, Luma, Rgb, RgbImage};
 use tokio::{sync::Semaphore, task::JoinSet};
 
 pub fn remap_color(
@@ -116,6 +116,7 @@ pub async fn remap_color_dir(
 
 pub async fn class2rgb(dataset_path: &String, rgb_list: &String) {
     let entries = fs::read_dir(dataset_path).unwrap();
+    fs::create_dir_all(format!("{}\\..\\output\\", dataset_path)).unwrap();
 
     let transform_map = Arc::new(RwLock::new(HashMap::<Luma<u8>, Rgb<u8>>::new()));
     {
@@ -174,4 +175,86 @@ pub async fn class2rgb(dataset_path: &String, rgb_list: &String) {
         });
     }
     while threads.join_next().await.is_some() {}
+}
+
+pub async fn rgb2class(dataset_path: &String, rgb_list: &String) {
+    let entries = fs::read_dir(dataset_path).unwrap();
+
+    fs::create_dir_all(format!("{}\\..\\output\\", dataset_path)).unwrap();
+    let transform_map: Arc<RwLock<HashMap<Rgb<u8>, Luma<u8>>>> =
+        Arc::new(RwLock::new(HashMap::<Rgb<u8>, Luma<u8>>::new()));
+    {
+        // Split RGB list
+        let mut class_id = 0u8;
+        for rgb in rgb_list.split(";").into_iter() {
+            let mut rgb_vec: Vec<u8> = vec![];
+            for splited in rgb.split(',') {
+                let splited = splited.parse::<u8>().unwrap();
+                rgb_vec.push(splited);
+            }
+
+            let rgb = Rgb([rgb_vec[0], rgb_vec[1], rgb_vec[2]]);
+            let gray = Luma([class_id]);
+            transform_map.write().unwrap().insert(rgb, gray);
+            class_id += 1;
+        }
+    }
+    let mut threads = JoinSet::new();
+    let sem = Arc::new(Semaphore::new(10));
+    for entry in entries {
+        let entry = entry.unwrap();
+        let sem = Arc::clone(&sem);
+        let transform_map = Arc::clone(&transform_map);
+        let dataset_path = dataset_path.clone();
+        threads.spawn(async move {
+            let _ = sem.acquire().await.unwrap();
+            let img = image::open(entry.path()).unwrap();
+            let original_img = img.into_rgb8();
+            let mut mapped_img = GrayImage::new(original_img.width(), original_img.height());
+            for ((original_x, original_y, original_pixel), (mapped_x, mapped_y, mapped_pixel)) in
+                original_img
+                    .enumerate_pixels()
+                    .zip(mapped_img.enumerate_pixels_mut())
+            {
+                if original_x != mapped_x || original_y != mapped_y {
+                    log::error!("Pixel coordinate mismatch");
+                    return ();
+                }
+                let Rgb([r, g, b]) = original_pixel;
+                let transform_map = transform_map.read().unwrap();
+                let new_color = match transform_map.get(&Rgb([*r, *g, *b])) {
+                    Some(color) => color,
+                    None => {
+                        log::error!(
+                            "Unknown color {},{},{} in {}",
+                            r,
+                            g,
+                            b,
+                            entry.path().as_os_str().to_str().unwrap()
+                        );
+                        panic!()
+                    }
+                };
+                mapped_pixel.0[0] = new_color.0[0];
+            }
+            mapped_img
+                .save(format!(
+                    "{}\\..\\output\\{}",
+                    dataset_path,
+                    entry.file_name().into_string().unwrap()
+                ))
+                .unwrap();
+            log::info!("{} finished", entry.file_name().into_string().unwrap());
+        });
+    }
+    while let Some(result) = threads.join_next().await {
+        match result {
+            Ok(()) => {}
+            Err(e) => {
+                log::error!("Error {}", e);
+                threads.abort_all();
+                break;
+            }
+        }
+    }
 }

@@ -104,6 +104,16 @@ enum CommonCommands {
         rgb_list: String,
     },
 
+    /// Map RGB image to 8 bit grayscale PNG class image
+    #[command(name = "rgb2class")]
+    RGB2Class {
+        #[arg(short, long, help = "The path for the folder containing images")]
+        dataset_path: String,
+
+        #[arg(short, long, help = "List of RGB colors, in R0,G0,B0;R1,G1,B1 format")]
+        rgb_list: String,
+    },
+
     /// Resize all images in a given folder to a given size with a given filter
     ResizeImages {
         #[arg(short, long, help = "The path for the folder containing images")]
@@ -140,6 +150,15 @@ enum CommonCommands {
         )]
         rgb_list: String,
     },
+
+    /// Split dataset into train and test sets
+    SplitDataset {
+        #[arg(short, long, help = "The path for the folder containing dataset files")]
+        dataset_path: String,
+
+        #[arg(short, long, help = "The ratio of train set, should be between 0 and 1")]
+        train_ratio: f32,
+    },
 }
 
 #[derive(Subcommand)]
@@ -147,7 +166,7 @@ enum YoloCommands {
     /// Split dataset into train and test sets
     /// Will store result in TXT file
     SplitDataset {
-        #[arg(short, long, help = "The path for the folder containing images")]
+        #[arg(short, long, help = "The path for the folder containing TXT labels")]
         dataset_path: String,
     },
 
@@ -249,6 +268,18 @@ async fn main() {
                 rgb_list,
             } => {
                 common::convert::rgb2rle(dataset_path, rgb_list).await;
+            }
+            CommonCommands::RGB2Class {
+                dataset_path,
+                rgb_list,
+            } => {
+                common::remap::rgb2class(dataset_path, rgb_list).await;
+            }
+            CommonCommands::SplitDataset {
+                dataset_path,
+                train_ratio,
+            } => {
+                common::dataset::split_dataset(dataset_path, train_ratio).await;
             }
         },
         Some(Commands::Yolo { command }) => match command {
