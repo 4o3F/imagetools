@@ -1,6 +1,6 @@
-use std::{fs, io::Cursor, sync::Arc};
-
 use image::imageops::FilterType;
+use opencv::{core, core::MatTraitConst, imgcodecs};
+use std::{fs, io::Cursor, sync::Arc};
 use tokio::{fs::File, io::AsyncWriteExt, sync::Semaphore, task::JoinSet};
 
 pub async fn resize_images(
@@ -18,7 +18,7 @@ pub async fn resize_images(
         _ => {
             log::error!("Invalid filter type. Please use one of the following: nearest, linear, cubic, gaussian, lanczos");
             return;
-        },
+        }
     };
 
     let entries = fs::read_dir(dataset_path).unwrap();
@@ -65,4 +65,51 @@ pub async fn resize_images(
         }
     }
     while threads.join_next().await.is_some() {}
+}
+
+#[derive(Clone, Copy)]
+pub enum EdgePosition {
+    Top,
+    Bottom,
+    Left,
+    Right,
+}
+
+pub async fn strip_image_edge(
+    source_path: &String,
+    save_path: &String,
+    position: &EdgePosition,
+    length: &i32,
+) {
+    let img = imgcodecs::imread(source_path, imgcodecs::IMREAD_UNCHANGED).unwrap();
+    log::info!("Loaded image: {}", source_path);
+    let size = img.size().unwrap();
+    let (width, height) = (size.width, size.height);
+
+    let cropped_img = match position {
+        EdgePosition::Top => core::Mat::roi(
+            &img,
+            core::Rect::new(0, *length as i32, width, (height - *length) as i32),
+        )
+        .unwrap(),
+        EdgePosition::Bottom => core::Mat::roi(
+            &img,
+            core::Rect::new(0, 0, width, (height - *length) as i32),
+        )
+        .unwrap(),
+        EdgePosition::Left => core::Mat::roi(
+            &img,
+            core::Rect::new(*length as i32, 0, (width - *length) as i32, height),
+        )
+        .unwrap(),
+        EdgePosition::Right => core::Mat::roi(
+            &img,
+            core::Rect::new(0, 0, (width - *length) as i32, height),
+        )
+        .unwrap(),
+    };
+
+    imgcodecs::imwrite(save_path, &cropped_img, &core::Vector::new()).unwrap();
+
+    log::info!("Image {} done", save_path);
 }

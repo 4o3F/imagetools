@@ -1,4 +1,5 @@
 use clap::{Parser, Subcommand};
+use common::operation::EdgePosition;
 
 mod common;
 mod yolo;
@@ -169,6 +170,25 @@ enum CommonCommands {
         #[arg(short, long, help = "The path for the folder containing images")]
         dataset_path: String,
     },
+
+    /// Strip image edges
+    StripImageEdge {
+        #[arg(short = 'o', long, help = "The path for the images")]
+        source_path: String,
+
+        #[arg(short, long, help = "The path to save the images")]
+        save_path: String,
+
+        #[arg(
+            short,
+            long,
+            help = "The strip direction, can be top/bottom/left/right"
+        )]
+        direction: String,
+
+        #[arg(short, long, help = "The strip length")]
+        length: i32,
+    },
 }
 
 #[derive(Subcommand)]
@@ -294,6 +314,30 @@ async fn main() {
             CommonCommands::CountClasses { dataset_path } => {
                 common::dataset::count_classes(dataset_path).await;
             }
+            CommonCommands::StripImageEdge {
+                source_path,
+                save_path,
+                direction,
+                length,
+            } => {
+                let direction = match direction.as_str() {
+                    "top" => EdgePosition::Top,
+                    "bottom" => EdgePosition::Bottom,
+                    "left" => EdgePosition::Left,
+                    "right" => EdgePosition::Right,
+                    _ => {
+                        log::error!("Invalid strip direction");
+                        return;
+                    }
+                };
+                common::operation::strip_image_edge(
+                    source_path,
+                    save_path,
+                    &direction,
+                    &length,
+                )
+                .await;
+            },
         },
         Some(Commands::Yolo { command }) => match command {
             YoloCommands::SplitDataset { dataset_path } => {

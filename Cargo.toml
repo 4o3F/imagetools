@@ -17,6 +17,7 @@ tokio = { version = "1", features = ["full"] }
 opencv = { version = "0.89.0", default-features = false, features = [
     "clang-runtime",
     "imgproc",
+    "imgcodecs",
 ] }
 lab = "0.11.0"
 itertools = "0.12.1"
