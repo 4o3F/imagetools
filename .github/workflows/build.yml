@@ -101,10 +101,14 @@ jobs:
           # Docker image to use
           #image: # optional, default is ghcr.io/crazy-max/ghaction-chocolatey
 
-      # msbuild as our underlying builder
-      #- name: Add msbuild to PATH
-      #  uses: microsoft/setup-msbuild@v1.3.1
-
+      - name: Cache OpenCV build
+        uses: actions/cache@v4
+        with:
+          path: |
+            D:/opt/opencv
+          key: ${{ runner.os }}-opencv-${{ hashFiles('**/CMakeLists.txt') }}  # 使用 CMakeLists.txt 的哈希作为缓存键
+          restore-keys: |
+            ${{ runner.os }}-opencv-
       # Note: in order to set config profile to Release and use a prefix path, we have to separate cmake steps for building/installing.  CMake nuances...
       #    See https://stackoverflow.com/questions/19024259/how-to-change-the-build-type-to-release-mode-in-cmake, https://stackoverflow.com/questions/50028570/is-it-possible-to-build-cmake-projects-directly-using-msbuildtools, https://cmake.org/cmake/help/latest/variable/CMAKE_INSTALL_PREFIX.html
       # Pull opencv source, unzip, configure cmake, build, and install
@@ -112,18 +116,22 @@ jobs:
       # Inspired from https://github.com/twistedfall/opencv-rust/issues/364
       - name: Install OpenCV static lib
         run: |
-          wget -O opencv.zip https://github.com/opencv/opencv/archive/refs/tags/4.8.1.zip
-          wget -O opencv_contrib.zip https://github.com/opencv/opencv_contrib/archive/refs/tags/4.8.1.zip
-          unzip opencv.zip
-          rm opencv.zip
-          unzip opencv_contrib.zip 
-          rm opencv_contrib.zip
-          mkdir -p build 
-          cd build
-          cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=NO -DCMAKE_INSTALL_PREFIX="D:/opt/opencv" -DBUILD_DOCS=OFF -DBUILD_EXAMPLES=OFF -DBUILD_TESTS=OFF -DBUILD_PERF_TESTS=OFF -DWITH_PNG=OFF -DWITH_JPEG=OFF -DWITH_TIFF=OFF -DWITH_WEBP=OFF -DWITH_OPENJPEG=OFF -DWITH_JASPER=OFF -DWITH_OPENEXR=OFF -DWITH_V4L=OFF  -DBUILD_opencv_java=OFF -DBUILD_opencv_python=OFF -DOPENCV_EXTRA_MODULES_PATH="../opencv_contrib-4.8.1/modules" ../opencv-4.8.1
-          cmake --build . --target install --config Release --parallel 8
-          cmake --install . --prefix D:/opt/opencv
-          cd ..
+          if [ ! -d "D:/opt/opencv" ]; then    
+            wget -O opencv.zip https://github.com/opencv/opencv/archive/refs/tags/4.8.1.zip
+            wget -O opencv_contrib.zip https://github.com/opencv/opencv_contrib/archive/refs/tags/4.8.1.zip
+            unzip opencv.zip
+            rm opencv.zip
+            unzip opencv_contrib.zip 
+            rm opencv_contrib.zip
+            mkdir -p build 
+            cd build
+            cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=NO -DCMAKE_INSTALL_PREFIX="D:/opt/opencv" -DBUILD_DOCS=OFF -DBUILD_EXAMPLES=OFF -DBUILD_TESTS=OFF -DBUILD_PERF_TESTS=OFF -DWITH_PNG=OFF -DWITH_JPEG=OFF -DWITH_TIFF=OFF -DWITH_WEBP=OFF -DWITH_OPENJPEG=OFF -DWITH_JASPER=OFF -DWITH_OPENEXR=OFF -DWITH_V4L=OFF  -DBUILD_opencv_java=OFF -DBUILD_opencv_python=OFF -DOPENCV_EXTRA_MODULES_PATH="../opencv_contrib-4.8.1/modules" ../opencv-4.8.1
+            cmake --build . --target install --config Release --parallel 8
+            cmake --install . --prefix D:/opt/opencv
+            cd ..
+          else
+            echo "Using cached OpenCV build"
+          fi
             
 
       - name: Setup tmate session
