@@ -65,7 +65,21 @@ enum CommonCommands {
         )]
         save_path: String,
     },
+
     /// Split large images to small pieces for augmentation purposes
+    SplitImages {
+        #[arg(short, long, help = "The path for the folder containing images")]
+        dataset_path: String,
+
+        #[arg(long = "height", help = "Height for each split")]
+        target_height: u32,
+
+        #[arg(long = "width", help = "Width for each split")]
+        target_width: u32,
+    },
+
+    /// Split large images to small pieces for augmentation purposes with bias
+    /// Bias is added between each split
     SplitImagesWithBias {
         #[arg(short, long, help = "The path for the folder containing images")]
         dataset_path: String,
@@ -73,10 +87,10 @@ enum CommonCommands {
         #[arg(short, long, help = "The bias between each split")]
         bias_step: u32,
 
-        #[arg(short, long, help = "Height for each split")]
+        #[arg(long = "height", help = "Height for each split")]
         target_height: u32,
 
-        #[arg(short, long, help = " Width for each split")]
+        #[arg(long = "width", help = "Width for each split")]
         target_width: u32,
     },
 
@@ -85,14 +99,14 @@ enum CommonCommands {
         #[arg(short, long, help = "The path for the folder containing images")]
         dataset_path: String,
 
-        #[arg(short, long, help = "Height for each split")]
-        target_height: u32,
-
-        #[arg(short, long, help = " Width for each split")]
-        target_width: u32,
-
         #[arg(short, long, help = "Valid RGB list, in R0,G0,B0;R1,G1,B1 format")]
         valid_rgb_list: String,
+
+        #[arg(long = "height", help = "Height for each split")]
+        target_height: u32,
+
+        #[arg(long = "width", help = "Width for each split")]
+        target_width: u32,
     },
 
     /// Map 8 bit grayscale PNG class image to RGB image
@@ -250,6 +264,13 @@ async fn main() {
                 common::remap::remap_color_dir(original_color, new_color, image_path, save_path)
                     .await;
             }
+            CommonCommands::SplitImages {
+                dataset_path,
+                target_height,
+                target_width,
+            } => {
+                common::augment::split_images(dataset_path, target_height, target_width).await;
+            }
             CommonCommands::SplitImagesWithBias {
                 dataset_path,
                 bias_step,
@@ -330,14 +351,9 @@ async fn main() {
                         return;
                     }
                 };
-                common::operation::strip_image_edge(
-                    source_path,
-                    save_path,
-                    &direction,
-                    &length,
-                )
-                .await;
-            },
+                common::operation::strip_image_edge(source_path, save_path, &direction, length)
+                    .await;
+            }
         },
         Some(Commands::Yolo { command }) => match command {
             YoloCommands::SplitDataset { dataset_path } => {

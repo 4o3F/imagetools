@@ -23,7 +23,7 @@ fn mask_image_array(image: &RgbImage, rgb: Rgb<u8>) -> ndarray::Array2<u8> {
     mask
 }
 
-pub async fn rgb2rle(dataset_path: &String, rgb_list: &String) {
+pub async fn rgb2rle(dataset_path: &String, rgb_list: &str) {
     let mut color_class_map = HashMap::<Rgb<u8>, u32>::new();
     let dataset = Arc::new(Mutex::new(Dataset {
         info: Default::default(),
@@ -36,8 +36,7 @@ pub async fn rgb2rle(dataset_path: &String, rgb_list: &String) {
     {
         let mut dataset_guard = dataset.lock().unwrap();
 
-        let mut class_id = 0;
-        for rgb in rgb_list.split(";").into_iter() {
+        for (class_id, rgb) in rgb_list.split(";").enumerate() {
             let mut rgb_vec: Vec<u8> = vec![];
             for splited in rgb.split(',') {
                 let splited = splited.parse::<u8>().unwrap();
@@ -46,13 +45,12 @@ pub async fn rgb2rle(dataset_path: &String, rgb_list: &String) {
 
             // TODO: add ability for super category
             let rgb = Rgb([rgb_vec[0], rgb_vec[1], rgb_vec[2]]);
-            color_class_map.insert(rgb, class_id);
+            color_class_map.insert(rgb, class_id as u32);
             dataset_guard.categories.push(Category {
-                id: class_id,
+                id: class_id as u32,
                 name: rgb_vec[3].to_string(),
                 supercategory: rgb_vec[3].to_string(),
             });
-            class_id += 1;
         }
     }
 

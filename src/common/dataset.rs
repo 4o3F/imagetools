@@ -25,7 +25,6 @@ pub async fn split_dataset(dataset_path: &String, train_ratio: &f32) {
                     .unwrap()
                     .to_str()
                     .unwrap()
-                    .to_string()
             ));
         });
     }
@@ -72,7 +71,7 @@ pub async fn count_classes(dataset_path: &String) {
             log::info!("Loaded image: {}", entry.path().display());
             let mut current_img_type_map = HashMap::<u8, i32>::new();
             for (_, _, pixel) in image.enumerate_pixels() {
-                if current_img_type_map.get(&pixel[0]).is_none() {
+                if !current_img_type_map.contains_key(&pixel[0]) {
                     current_img_type_map.insert(pixel[0], 1);
                 } else {
                     current_img_type_map

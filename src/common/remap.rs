@@ -8,15 +8,7 @@ use std::{
 use image::{GrayImage, Luma, Rgb, RgbImage};
 use tokio::{sync::Semaphore, task::JoinSet};
 
-pub fn remap_color(
-    original_color: &String,
-    new_color: &String,
-    image_path: &String,
-    save_path: &String,
-) {
-    let original_color_rgb: Rgb<u8>;
-    let new_color_rgb: Rgb<u8>;
-
+pub fn remap_color(original_color: &str, new_color: &str, image_path: &String, save_path: &String) {
     let mut original_color_vec: Vec<u8> = vec![];
     for splited in original_color.split(',') {
         let splited = splited.parse::<u8>().unwrap();
@@ -29,25 +21,25 @@ pub fn remap_color(
         new_color_vec.push(splited);
     }
 
-    if original_color_vec.len() != 3 {
+    let original_color_rgb: Rgb<u8> = if original_color_vec.len() != 3 {
         log::error!("Malformed original color RGB, please use R,G,B format");
         return;
     } else {
-        original_color_rgb = Rgb([
+        Rgb([
             original_color_vec[0],
             original_color_vec[1],
             original_color_vec[2],
-        ]);
-    }
+        ])
+    };
 
-    if new_color_vec.len() != 3 {
+    let new_color_rgb: Rgb<u8> = if new_color_vec.len() != 3 {
         log::error!("Malformed new color RGB, please use R,G,B format");
         return;
     } else {
-        new_color_rgb = Rgb([new_color_vec[0], new_color_vec[1], new_color_vec[2]]);
-    }
+        Rgb([new_color_vec[0], new_color_vec[1], new_color_vec[2]])
+    };
 
-    let img = image::open(&image_path).unwrap();
+    let img = image::open(image_path).unwrap();
     let mut img = img.into_rgb8();
     for (_, _, pixel) in img.enumerate_pixels_mut() {
         if *pixel == original_color_rgb {
@@ -114,15 +106,14 @@ pub async fn remap_color_dir(
     log::info!("All color remap done!");
 }
 
-pub async fn class2rgb(dataset_path: &String, rgb_list: &String) {
+pub async fn class2rgb(dataset_path: &String, rgb_list: &str) {
     let entries = fs::read_dir(dataset_path).unwrap();
     fs::create_dir_all(format!("{}\\..\\output\\", dataset_path)).unwrap();
 
     let transform_map = Arc::new(RwLock::new(HashMap::<Luma<u8>, Rgb<u8>>::new()));
     {
         // Split RGB list
-        let mut class_id = 0u8;
-        for rgb in rgb_list.split(";").into_iter() {
+        for (class_id, rgb) in rgb_list.split(";").enumerate() {
             let mut rgb_vec: Vec<u8> = vec![];
             for splited in rgb.split(',') {
                 let splited = splited.parse::<u8>().unwrap();
@@ -130,9 +121,8 @@ pub async fn class2rgb(dataset_path: &String, rgb_list: &String) {
             }
 
             let rgb = Rgb([rgb_vec[0], rgb_vec[1], rgb_vec[2]]);
-            let gray = Luma([class_id]);
+            let gray = Luma([class_id as u8]);
             transform_map.write().unwrap().insert(gray, rgb);
-            class_id += 1;
         }
     }
     let mut threads = JoinSet::new();
@@ -154,7 +144,7 @@ pub async fn class2rgb(dataset_path: &String, rgb_list: &String) {
             {
                 if original_x != mapped_x || original_y != mapped_y {
                     log::error!("Pixel coordinate mismatch");
-                    return ();
+                    return;
                 }
                 let Luma([g]) = original_pixel;
                 let transform_map = transform_map.read().unwrap();
@@ -177,7 +167,7 @@ pub async fn class2rgb(dataset_path: &String, rgb_list: &String) {
     while threads.join_next().await.is_some() {}
 }
 
-pub async fn rgb2class(dataset_path: &String, rgb_list: &String) {
+pub async fn rgb2class(dataset_path: &String, rgb_list: &str) {
     let entries = fs::read_dir(dataset_path).unwrap();
 
     fs::create_dir_all(format!("{}\\..\\output\\", dataset_path)).unwrap();
@@ -185,8 +175,7 @@ pub async fn rgb2class(dataset_path: &String, rgb_list: &String) {
         Arc::new(RwLock::new(HashMap::<Rgb<u8>, Luma<u8>>::new()));
     {
         // Split RGB list
-        let mut class_id = 0u8;
-        for rgb in rgb_list.split(";").into_iter() {
+        for (class_id, rgb) in rgb_list.split(";").enumerate() {
             let mut rgb_vec: Vec<u8> = vec![];
             for splited in rgb.split(',') {
                 let splited = splited.parse::<u8>().unwrap();
@@ -194,9 +183,8 @@ pub async fn rgb2class(dataset_path: &String, rgb_list: &String) {
             }
 
             let rgb = Rgb([rgb_vec[0], rgb_vec[1], rgb_vec[2]]);
-            let gray = Luma([class_id]);
+            let gray = Luma([class_id as u8]);
             transform_map.write().unwrap().insert(rgb, gray);
-            class_id += 1;
         }
     }
     let mut threads = JoinSet::new();
@@ -218,7 +206,7 @@ pub async fn rgb2class(dataset_path: &String, rgb_list: &String) {
             {
                 if original_x != mapped_x || original_y != mapped_y {
                     log::error!("Pixel coordinate mismatch");
-                    return ();
+                    return;
                 }
                 let Rgb([r, g, b]) = original_pixel;
                 let transform_map = transform_map.read().unwrap();

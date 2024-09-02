@@ -7,6 +7,128 @@ use std::{
 use image::{Rgb, RgbImage};
 use tokio::{sync::Semaphore, task::JoinSet};
 
+use opencv::{core, imgcodecs, prelude::*};
+
+pub async fn split_images(dataset_path: &String, target_height: &u32, target_width: &u32) {
+    let entries = fs::read_dir(dataset_path).unwrap();
+    let mut threads = JoinSet::new();
+
+    fs::create_dir_all(format!("{}\\..\\output\\", dataset_path)).unwrap();
+
+    for entry in entries {
+        let entry = entry.unwrap();
+        let dataset_path = dataset_path.clone();
+        let target_height = *target_height;
+        let target_width = *target_width;
+        let entry_path = entry.path().to_str().unwrap().to_string();
+
+        threads.spawn(async move {
+            log::info!(
+                "Image {} processing...",
+                entry.file_name().to_str().unwrap()
+            );
+
+            // 读取图片
+            let img = imgcodecs::imread(&entry_path, imgcodecs::IMREAD_UNCHANGED).unwrap();
+            let size = img.size().unwrap();
+            let (width, height) = (size.width as u32, size.height as u32);
+            let vertical_count = height / target_height;
+            let horizontal_count = width / target_width;
+
+            // LTR
+            'outer: for horizontal_index in 0..horizontal_count {
+                'inner: for vertical_index in 0..vertical_count {
+                    let start_y = horizontal_index * target_height;
+                    let start_x = vertical_index * target_width;
+
+                    if start_x + target_width > width {
+                        continue 'inner;
+                    }
+                    if start_y + target_height > height {
+                        continue 'outer;
+                    }
+
+                    let cropped_img = core::Mat::roi(
+                        &img,
+                        core::Rect::new(
+                            start_x as i32,
+                            start_y as i32,
+                            target_width as i32,
+                            target_height as i32,
+                        ),
+                    )
+                    .unwrap();
+                    imgcodecs::imwrite(
+                        format!(
+                            "{}\\..\\output\\{}_LTR_h{}_v{}.{}",
+                            dataset_path,
+                            entry.path().file_stem().unwrap().to_str().unwrap(),
+                            horizontal_index,
+                            vertical_index,
+                            entry.path().extension().unwrap().to_str().unwrap()
+                        )
+                        .as_str(),
+                        &cropped_img,
+                        &core::Vector::new(),
+                    )
+                    .unwrap();
+                }
+            }
+            log::info!("Image LTR {} done", entry.file_name().to_str().unwrap(),);
+
+            // RTL
+            'outer: for horizontal_index in 0..horizontal_count {
+                'inner: for vertical_index in 0..vertical_count {
+                    let start_y = height as i32 - (horizontal_index * target_height) as i32;
+                    let start_x = width as i32 - (vertical_index * target_width) as i32;
+
+                    if start_x < 0
+                        || start_x as u32 >= width
+                        || start_x as u32 + target_width > width
+                    {
+                        continue 'inner;
+                    }
+                    if start_y < 0
+                        || start_y as u32 >= height
+                        || start_y as u32 + target_height > height
+                    {
+                        continue 'outer;
+                    }
+
+                    let cropped_img = core::Mat::roi(
+                        &img,
+                        core::Rect::new(
+                            start_x,
+                            start_y,
+                            target_width as i32,
+                            target_height as i32,
+                        ),
+                    )
+                    .unwrap();
+                    imgcodecs::imwrite(
+                        format!(
+                            "{}\\..\\output\\{}_RTL_h{}_v{}.{}",
+                            dataset_path,
+                            entry.path().file_stem().unwrap().to_str().unwrap(),
+                            horizontal_index,
+                            vertical_index,
+                            entry.path().extension().unwrap().to_str().unwrap()
+                        )
+                        .as_str(),
+                        &cropped_img,
+                        &core::Vector::new(),
+                    )
+                    .unwrap();
+                }
+            }
+            log::info!("Image RTL {} done", entry.file_name().to_str().unwrap(),);
+
+            log::info!("Image {} done", entry.file_name().to_str().unwrap());
+        });
+    }
+    while threads.join_next().await.is_some() {}
+}
+
 pub async fn split_images_with_bias(
     dataset_path: &String,
     bias_step: &u32,
@@ -20,142 +142,136 @@ pub async fn split_images_with_bias(
 
     for entry in entries {
         let entry = entry.unwrap();
-        if entry
-            .path()
-            .file_name()
-            .unwrap()
-            .to_str()
-            .unwrap()
-            .ends_with(".png")
-        {
-            let dataset_path = dataset_path.clone();
-            let bias_step = bias_step.clone();
-            let target_height = target_height.clone();
-            let target_width = target_width.clone();
-            threads.spawn(async move {
-                log::info!(
-                    "Image {} processing...",
-                    entry.path().file_name().unwrap().to_str().unwrap()
-                );
-                let mut reader = image::io::Reader::open(entry.path()).unwrap();
-                reader.no_limits();
-                let img = reader.decode().unwrap();
-                // if !entry
-                //     .path()
-                //     .file_name()
-                //     .unwrap()
-                //     .to_str()
-                //     .unwrap()
-                //     .starts_with("13")
-                // {
-                //     return ();
-                // }
-                // This only useful for cropping the left side black bar
-                // if path.contains("images") && !path.starts_with("11") && !path.starts_with("12") {
-                //     img = img.crop_imm(18, 0, img.width() - 18, img.height());
-                // }
-                let vertical_count = img.height() / target_height;
-                let horizontal_count = img.width() / target_width;
-                let bias_max = horizontal_count.max(vertical_count);
-                for bias in 0..bias_max {
-                    'outer: for horizontal_index in 0..horizontal_count {
-                        'inner: for vertical_index in 0..vertical_count {
-                            // These two should always be larger than 0
-                            let start_y = horizontal_index * target_height + bias * bias_step;
-                            let start_x = vertical_index * target_width + bias * bias_step;
-                            if start_x + target_width > img.width() {
-                                continue 'inner;
-                            }
-                            if start_y + target_height > img.height() {
-                                continue 'outer;
-                            }
-                            let cropped_img = img.crop_imm(
-                                start_x as u32,
-                                start_y as u32,
-                                target_width,
-                                target_height,
-                            );
-                            cropped_img
-                                .save(format!(
-                                    "{}\\..\\output\\{}_LTR_bias{}_h{}_v{}.png",
-                                    dataset_path,
-                                    entry
-                                        .path()
-                                        .file_name()
-                                        .unwrap()
-                                        .to_str()
-                                        .unwrap()
-                                        .replace(".png", ""),
-                                    bias,
-                                    horizontal_index,
-                                    vertical_index
-                                ))
-                                .unwrap();
-                        }
-                    }
-                    log::info!(
-                        "Image LTR {} bias {} done",
-                        entry.path().file_name().unwrap().to_str().unwrap(),
-                        bias
-                    );
-                }
+        let dataset_path = dataset_path.clone();
+        let bias_step = *bias_step;
+        let target_height = *target_height;
+        let target_width = *target_width;
+        let entry_path = entry.path().to_str().unwrap().to_string();
 
-                for bias in 0..bias_max {
-                    'outer: for horizontal_index in 0..horizontal_count {
-                        'inner: for vertical_index in 0..vertical_count {
-                            let start_y = img.height() as i32
-                                - (horizontal_index * target_height + bias * bias_step) as i32;
-                            let start_x = img.width() as i32
-                                - (vertical_index * target_width + bias * bias_step) as i32;
-                            // This should never be greater than original image width
-                            if start_x < 0 {
-                                continue 'inner;
-                            }
-                            if start_y < 0 {
-                                continue 'outer;
-                            }
-                            let cropped_img = img.crop_imm(
-                                start_x as u32,
-                                start_y as u32,
-                                target_width,
-                                target_height,
-                            );
-                            cropped_img
-                                .save(format!(
-                                    "{}\\..\\output\\{}_RTL_bias{}_h{}_v{}.png",
-                                    dataset_path,
-                                    entry
-                                        .path()
-                                        .file_name()
-                                        .unwrap()
-                                        .to_str()
-                                        .unwrap()
-                                        .replace(".png", ""),
-                                    bias,
-                                    horizontal_index,
-                                    vertical_index
-                                ))
-                                .unwrap();
-                        }
-                    }
-                    log::info!(
-                        "Image RTL {} bias {} done",
-                        entry.path().file_name().unwrap().to_str().unwrap(),
-                        bias
-                    );
-                }
+        threads.spawn(async move {
+            log::info!(
+                "Image {} processing...",
+                entry.file_name().to_str().unwrap()
+            );
 
+            // 读取图片
+            let img = imgcodecs::imread(&entry_path, imgcodecs::IMREAD_UNCHANGED).unwrap();
+            let size = img.size().unwrap();
+            let (width, height) = (size.width as u32, size.height as u32);
+            let vertical_count = height / target_height;
+            let horizontal_count = width / target_width;
+            let bias_max = horizontal_count.max(vertical_count);
+
+            // LTR
+            for bias in 0..bias_max {
+                'outer: for horizontal_index in 0..horizontal_count {
+                    'inner: for vertical_index in 0..vertical_count {
+                        let start_y = horizontal_index * target_height + bias * bias_step;
+                        let start_x = vertical_index * target_width + bias * bias_step;
+
+                        if start_x + target_width > width {
+                            continue 'inner;
+                        }
+                        if start_y + target_height > height {
+                            continue 'outer;
+                        }
+
+                        let cropped_img = core::Mat::roi(
+                            &img,
+                            core::Rect::new(
+                                start_x as i32,
+                                start_y as i32,
+                                target_width as i32,
+                                target_height as i32,
+                            ),
+                        )
+                        .unwrap();
+                        imgcodecs::imwrite(
+                            format!(
+                                "{}\\..\\output\\{}_LTR_bias{}_h{}_v{}.{}",
+                                dataset_path,
+                                entry.path().file_stem().unwrap().to_str().unwrap(),
+                                bias,
+                                horizontal_index,
+                                vertical_index,
+                                entry.path().extension().unwrap().to_str().unwrap()
+                            )
+                            .as_str(),
+                            &cropped_img,
+                            &core::Vector::new(),
+                        )
+                        .unwrap();
+                    }
+                }
                 log::info!(
-                    "Image {} done",
-                    entry.path().file_name().unwrap().to_str().unwrap()
+                    "Image LTR {} bias {} done",
+                    entry.file_name().to_str().unwrap(),
+                    bias
                 );
-            });
-        }
+            }
+
+            // RTL
+            for bias in 0..bias_max {
+                'outer: for horizontal_index in 0..horizontal_count {
+                    'inner: for vertical_index in 0..vertical_count {
+                        let start_y = height as i32
+                            - (horizontal_index * target_height + bias * bias_step) as i32;
+                        let start_x = width as i32
+                            - (vertical_index * target_width + bias * bias_step) as i32;
+
+                        if start_x < 0
+                            || start_x as u32 >= width
+                            || start_x as u32 + target_width > width
+                        {
+                            continue 'inner;
+                        }
+                        if start_y < 0
+                            || start_y as u32 >= height
+                            || start_y as u32 + target_height > height
+                        {
+                            continue 'outer;
+                        }
+
+                        let cropped_img = core::Mat::roi(
+                            &img,
+                            core::Rect::new(
+                                start_x,
+                                start_y,
+                                target_width as i32,
+                                target_height as i32,
+                            ),
+                        )
+                        .unwrap();
+                        imgcodecs::imwrite(
+                            format!(
+                                "{}\\..\\output\\{}_RTL_bias{}_h{}_v{}.png",
+                                dataset_path,
+                                entry.file_name().to_str().unwrap().replace(".png", ""),
+                                bias,
+                                horizontal_index,
+                                vertical_index
+                            )
+                            .as_str(),
+                            &cropped_img,
+                            &core::Vector::new(),
+                        )
+                        .unwrap();
+                    }
+                }
+                log::info!(
+                    "Image RTL {} bias {} done",
+                    entry.file_name().to_str().unwrap(),
+                    bias
+                );
+            }
+
+            log::info!("Image {} done", entry.file_name().to_str().unwrap());
+        });
     }
     while threads.join_next().await.is_some() {}
 }
 
-pub fn check_valid_pixel_count(img: &RgbImage, valid_rgb_list: &Vec<Rgb<u8>>) -> bool {
+pub fn check_valid_pixel_count(img: &RgbImage, valid_rgb_list: &[Rgb<u8>]) -> bool {
     let mut count = 0;
     img.enumerate_pixels().for_each(|(_, _, pixel)| {
         if valid_rgb_list.contains(pixel) {
@@ -175,10 +291,10 @@ pub async fn split_images_with_filter(
     dataset_path: &String,
     target_height: &u32,
     target_width: &u32,
-    valid_rgb_list_str: &String,
+    valid_rgb_list_str: &str,
 ) {
     let valid_rgb_list: Arc<RwLock<Vec<Rgb<u8>>>> = Arc::new(RwLock::new(Vec::new()));
-    for rgb in valid_rgb_list_str.split(";").into_iter() {
+    for rgb in valid_rgb_list_str.split(";") {
         let valid_rgb_list = Arc::clone(&valid_rgb_list);
         let mut valid_rgb_list = valid_rgb_list.try_write().unwrap();
 
@@ -210,8 +326,8 @@ pub async fn split_images_with_filter(
         {
             let permit = Arc::clone(&sem);
             let cropped_images = Arc::clone(&cropped_images);
-            let target_height = target_height.clone();
-            let target_width = target_width.clone();
+            let target_height = *target_height;
+            let target_width = *target_width;
             threads.spawn(async move {
                 let _ = permit.acquire().await.unwrap();
                 let img_id = entry
@@ -281,8 +397,8 @@ pub async fn split_images_with_filter(
             let cropped_labels = Arc::clone(&cropped_labels);
             let cropped_images = Arc::clone(&cropped_images);
 
-            let target_width = target_width.clone();
-            let target_height = target_height.clone();
+            let target_width = *target_width;
+            let target_height = *target_height;
 
             let valid_rgb_list = Arc::clone(&valid_rgb_list);
             threads.spawn(async move {

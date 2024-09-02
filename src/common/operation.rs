@@ -7,7 +7,7 @@ pub async fn resize_images(
     dataset_path: &String,
     target_height: &u32,
     target_width: &u32,
-    filter: &String,
+    filter: &str,
 ) {
     let filter = match filter.to_lowercase().as_str() {
         "nearest" => FilterType::Nearest,
@@ -37,9 +37,8 @@ pub async fn resize_images(
         {
             let permit = Arc::clone(&sem);
             let dataset_path = dataset_path.clone();
-            let target_height = target_height.clone();
-            let target_width = target_width.clone();
-            let filter = filter.clone();
+            let target_height = *target_height;
+            let target_width = *target_width;
             threads.spawn(async move {
                 let _permit = permit.acquire().await.unwrap();
 
@@ -87,26 +86,20 @@ pub async fn strip_image_edge(
     let (width, height) = (size.width, size.height);
 
     let cropped_img = match position {
-        EdgePosition::Top => core::Mat::roi(
-            &img,
-            core::Rect::new(0, *length as i32, width, (height - *length) as i32),
-        )
-        .unwrap(),
-        EdgePosition::Bottom => core::Mat::roi(
-            &img,
-            core::Rect::new(0, 0, width, (height - *length) as i32),
-        )
-        .unwrap(),
+        EdgePosition::Top => {
+            core::Mat::roi(&img, core::Rect::new(0, *length, width, height - *length)).unwrap()
+        }
+        EdgePosition::Bottom => {
+            core::Mat::roi(&img, core::Rect::new(0, 0, width, height - *length)).unwrap()
+        }
         EdgePosition::Left => core::Mat::roi(
             &img,
-            core::Rect::new(*length as i32, 0, (width - *length) as i32, height),
+            core::Rect::new(*length, 0, width - *length, height),
         )
         .unwrap(),
-        EdgePosition::Right => core::Mat::roi(
-            &img,
-            core::Rect::new(0, 0, (width - *length) as i32, height),
-        )
-        .unwrap(),
+        EdgePosition::Right => {
+            core::Mat::roi(&img, core::Rect::new(0, 0, width - *length, height)).unwrap()
+        }
     };
 
     imgcodecs::imwrite(save_path, &cropped_img, &core::Vector::new()).unwrap();

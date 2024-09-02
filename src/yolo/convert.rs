@@ -4,7 +4,7 @@ use image::Rgb;
 use opencv::{core::MatTrait, imgproc};
 use tokio::{fs::File, io::AsyncWriteExt, sync::Semaphore, task::JoinSet};
 
-pub async fn rgb2yolo(dataset_path: &String, rgb_list: &String) {
+pub async fn rgb2yolo(dataset_path: &String, rgb_list: &str) {
     let mut color_class_map = HashMap::<Rgb<u8>, u32>::new();
     // 卫星数据
     // color_class_map.insert(Rgb([0, 0, 0]), 0);
@@ -38,15 +38,13 @@ pub async fn rgb2yolo(dataset_path: &String, rgb_list: &String) {
     // color_class_map.insert(Rgb([128, 128, 128]), 0);
     // color_class_map.insert(Rgb([255, 255, 255]), 2);
 
-    let mut class_id = 0;
-    for rgb in rgb_list.split(";").into_iter() {
+    for (class_id, rgb) in rgb_list.split(";").enumerate() {
         let mut rgb_vec: Vec<u8> = vec![];
         for splited in rgb.split(',') {
             let splited = splited.parse::<u8>().unwrap();
             rgb_vec.push(splited);
         }
-        color_class_map.insert(Rgb([rgb_vec[0], rgb_vec[1], rgb_vec[2]]), class_id);
-        class_id += 1;
+        color_class_map.insert(Rgb([rgb_vec[0], rgb_vec[1], rgb_vec[2]]), class_id as u32);
     }
 
     let mut threads = JoinSet::new();
