@@ -10,6 +10,12 @@ on:
 
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
+    inputs:
+      debug_enabled:
+        type: boolean
+        description: 'Run the build with tmate debugging enabled (https://github.com/marketplace/actions/debugging-with-tmate)'
+        required: false
+        default: false
 
 # Generates binaries for different platforms, which will be uploaded to the Actions page.
 # We then manually uplaod them into the Release's assets.
@@ -108,15 +114,21 @@ jobs:
         run: |
           wget -O opencv.zip https://github.com/opencv/opencv/archive/refs/tags/4.8.1.zip
           wget -O opencv_contrib.zip https://github.com/opencv/opencv_contrib/archive/refs/tags/4.8.1.zip
-          unzip opencv.zip && rm opencv.zip
-          unzip opencv_contrib.zip && rm opencv_contrib.zip
-          mkdir -p build && cd build
+          unzip opencv.zip
+          rm opencv.zip
+          unzip opencv_contrib.zip 
+          rm opencv_contrib.zip
+          mkdir -p build 
+          cd build
           cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=NO -DCMAKE_INSTALL_PREFIX="D:/opt/opencv" -DBUILD_DOCS=OFF -DBUILD_EXAMPLES=OFF -DBUILD_TESTS=OFF -DBUILD_PERF_TESTS=OFF -DWITH_PNG=OFF -DWITH_JPEG=OFF -DWITH_TIFF=OFF -DWITH_WEBP=OFF -DWITH_OPENJPEG=OFF -DWITH_JASPER=OFF -DWITH_OPENEXR=OFF -DWITH_V4L=OFF  -DBUILD_opencv_java=OFF -DBUILD_opencv_python=OFF -DOPENCV_EXTRA_MODULES_PATH="../opencv_contrib-4.8.1/modules" ../opencv-4.8.1
           cmake --build . --target install --config Release --parallel 8
           cmake --install . --prefix D:/opt/opencv
           cd ..
             
 
+      - name: Setup tmate session
+        uses: mxschmitt/action-tmate@v3
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.debug_enabled }}
       # OPENCV_LINK_LIBS includes both opencv modules and 3rdparty.  Note: 3rdparty libs may be named differently on different platforms
       # OPENCV_LINK_PATHS points to the installed staticlib folder after cmake install
       # OPENCV_INCLUDE_PATHS points to installed include folder after cmake install
@@ -125,7 +137,6 @@ jobs:
       - name: Build
         #run: $env:OPENCV_LINK_LIBS=$(Get-ChildItem -Path C:\tools -Recurse -Filter 'opencv_world*.lib' | Select-Object -first 1 | Select-Object -ExpandProperty Name); $env:OPENCV_LINK_PATHS=$(Get-ChildItem -Path C:\tools -Recurse -Filter 'opencv_world*.lib' | Select-Object -first 1 | Select-Object -ExpandProperty FullName | Split-Path -parent); $env:OPENCV_INCLUDE_PATHS="C:\tools\opencv\build\include"; cargo build --release
         run: |
-          ls D:\opt\opencv\x64\vc17\staticlib
           $env:OPENCV_LINK_LIBS="opencv_core481,opencv_videoio481,opencv_imgcodecs481,opencv_imgproc481,ittnotify,zlib"
           $env:OPENCV_LINK_PATHS="D:/opt/opencv/x64/vc17/staticlib"
           $env:OPENCV_INCLUDE_PATHS="D:/opt/opencv/include"
