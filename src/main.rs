@@ -156,8 +156,18 @@ enum CommonCommands {
         #[arg(short, long, help = "The path for the folder containing dataset files")]
         dataset_path: String,
 
-        #[arg(short, long, help = "The ratio of train set, should be between 0 and 1")]
+        #[arg(
+            short,
+            long,
+            help = "The ratio of train set, should be between 0 and 1"
+        )]
         train_ratio: f32,
+    },
+
+    /// Count class for 8 bit PNG image
+    CountClasses {
+        #[arg(short, long, help = "The path for the folder containing images")]
+        dataset_path: String,
     },
 }
 
@@ -280,6 +290,9 @@ async fn main() {
                 train_ratio,
             } => {
                 common::dataset::split_dataset(dataset_path, train_ratio).await;
+            }
+            CommonCommands::CountClasses { dataset_path } => {
+                common::dataset::count_classes(dataset_path).await;
             }
         },
         Some(Commands::Yolo { command }) => match command {
