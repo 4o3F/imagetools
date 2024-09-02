@@ -84,7 +84,7 @@ jobs:
     # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
       # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       
       # Install rust
       - name: Install rust
@@ -129,6 +129,11 @@ jobs:
       - name: Setup tmate session
         uses: mxschmitt/action-tmate@v3
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.debug_enabled }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-directories: |
+            "D:/opt/opencv"
       # OPENCV_LINK_LIBS includes both opencv modules and 3rdparty.  Note: 3rdparty libs may be named differently on different platforms
       # OPENCV_LINK_PATHS points to the installed staticlib folder after cmake install
       # OPENCV_INCLUDE_PATHS points to installed include folder after cmake install
@@ -145,7 +150,7 @@ jobs:
         
       # Upload artifact: https://github.com/actions/upload-artifact
       - name: Upload Artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: imagetools.exe
           path: target/release/imagetools.exe
