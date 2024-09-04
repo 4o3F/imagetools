@@ -4,7 +4,6 @@ use std::{
     sync::{Arc, Mutex, RwLock},
 };
 
-use image::{Rgb, RgbImage};
 use tokio::{sync::Semaphore, task::JoinSet};
 
 use opencv::{core, imgcodecs, prelude::*};
@@ -271,221 +270,271 @@ pub async fn split_images_with_bias(
     while threads.join_next().await.is_some() {}
 }
 
-pub fn check_valid_pixel_count(img: &RgbImage, valid_rgb_list: &[Rgb<u8>]) -> bool {
+pub fn check_valid_pixel_count(img: &Mat, valid_rgb_list: &[core::Vec3b]) -> bool {
     let mut count = 0;
-    img.enumerate_pixels().for_each(|(_, _, pixel)| {
-        if valid_rgb_list.contains(pixel) {
-            count += 1;
-        }
-    });
-    if (count as f32) / ((img.width() * img.height()) as f32) > 0.01 {
-        println!(
-            "Valid ratio {}",
-            (count as f32) / ((img.width() * img.height()) as f32)
-        );
-    }
-    (count as f32) / ((img.width() * img.height()) as f32) > 0.01
-}
+    let size = img.size().unwrap();
+    let (width, height) = (size.width, size.height);
 
+    for y in 0..height {
+        for x in 0..width {
+            let pixel = img.at_2d::<core::Vec3b>(y, x).unwrap();
+            if valid_rgb_list.contains(&pixel) {
+                count += 1;
+            }
+        }
+    }
+
+    let ratio = (count as f32) / ((width * height) as f32);
+    // if ratio > 0.01 {
+    //     log::info!("Valid ratio {}", ratio);
+    // }
+    ratio > 0.01
+}
 pub async fn split_images_with_filter(
-    dataset_path: &String,
+    image_path: &String,
+    label_path: &String,
     target_height: &u32,
     target_width: &u32,
     valid_rgb_list_str: &str,
 ) {
-    let valid_rgb_list: Arc<RwLock<Vec<Rgb<u8>>>> = Arc::new(RwLock::new(Vec::new()));
+    let valid_rgb_list: Arc<RwLock<Vec<core::Vec3b>>> = Arc::new(RwLock::new(Vec::new()));
     for rgb in valid_rgb_list_str.split(";") {
         let valid_rgb_list = Arc::clone(&valid_rgb_list);
-        let mut valid_rgb_list = valid_rgb_list.try_write().unwrap();
+        let mut valid_rgb_list = valid_rgb_list.write().unwrap();
 
-        let mut rgb_vec: Vec<u8> = vec![];
-        for splited in rgb.split(',') {
-            let splited = splited.parse::<u8>().unwrap();
-            rgb_vec.push(splited);
-        }
+        let rgb_vec: Vec<u8> = rgb.split(',').map(|s| s.parse::<u8>().unwrap()).collect();
 
-        let rgb = Rgb([rgb_vec[0], rgb_vec[1], rgb_vec[2]]);
-        valid_rgb_list.push(rgb);
+        valid_rgb_list.push(core::Vec3b::from([rgb_vec[0], rgb_vec[1], rgb_vec[2]]));
     }
 
-    let image_entries = fs::read_dir(format!("{}\\images", dataset_path)).unwrap();
-    let label_entries = fs::read_dir(format!("{}\\labels", dataset_path)).unwrap();
+    let image_entries = fs::read_dir(image_path).unwrap();
+    let label_entries = fs::read_dir(label_path).unwrap();
     let sem = Arc::new(Semaphore::new(3));
-    let cropped_images = Arc::new(Mutex::new(HashMap::<String, RgbImage>::new()));
-    let cropped_labels = Arc::new(Mutex::new(HashMap::<String, RgbImage>::new()));
-    let mut threads = JoinSet::new();
+    let cropped_images = Arc::new(Mutex::new(HashMap::<String, Mat>::new()));
+    let cropped_labels = Arc::new(Mutex::new(HashMap::<String, Mat>::new()));
+    let mut threads = tokio::task::JoinSet::new();
+
+    let mut image_extension = None;
     for entry in image_entries {
         let entry = entry.unwrap();
-        if entry
-            .path()
-            .file_name()
-            .unwrap()
-            .to_str()
-            .unwrap()
-            .ends_with(".png")
-        {
-            let permit = Arc::clone(&sem);
-            let cropped_images = Arc::clone(&cropped_images);
-            let target_height = *target_height;
-            let target_width = *target_width;
-            threads.spawn(async move {
-                let _ = permit.acquire().await.unwrap();
-                let img_id = entry
-                    .path()
-                    .file_name()
-                    .unwrap()
-                    .to_str()
-                    .unwrap()
-                    .replace(".png", "");
-                let img = image::open(entry.path()).unwrap();
-                // This is for cropping the left side black bar
-                // let img = img.crop_imm(18, 0, img.width(), img.height());
 
-                let vertical_count = img.height() / target_height;
-                let horizontal_count = img.width() / target_width;
-                let mut imgs_map = HashMap::<String, RgbImage>::new();
-                // crop horizentally from left
-                for horizontal_index in 0..horizontal_count {
-                    // crop vertically from top
-                    for vertical_index in 0..vertical_count {
-                        imgs_map.insert(
-                            format!("{}_lt2rb_{}_{}", img_id, horizontal_index, vertical_index),
-                            img.crop_imm(
-                                horizontal_index * target_width,
-                                vertical_index * target_height,
-                                target_width,
-                                target_height,
-                            )
-                            .into_rgb8(),
-                        );
-                    }
-                }
-                // crop horizentally from right
-                for horizontal_index in 0..horizontal_count {
-                    // crop vertically from bottom
-                    for vertical_index in 0..vertical_count {
-                        imgs_map.insert(
-                            format!("{}_rb2lt_{}_{}", img_id, horizontal_index, vertical_index),
-                            img.crop_imm(
-                                img.width() - (horizontal_index + 1) * target_width,
-                                img.height() - (vertical_index + 1) * target_height,
-                                target_width,
-                                target_height,
-                            )
-                            .into_rgb8(),
-                        );
-                    }
-                }
-
-                cropped_images.lock().unwrap().extend(imgs_map);
-                println!("Image {} process done", img_id)
-            });
+        if image_extension.is_none() {
+            let extension = entry
+                .path()
+                .extension()
+                .unwrap()
+                .to_os_string()
+                .into_string()
+                .unwrap();
+            image_extension = Some(extension);
         }
+
+        let permit = Arc::clone(&sem);
+        let cropped_images = Arc::clone(&cropped_images);
+        let target_height = *target_height;
+        let target_width = *target_width;
+
+        threads.spawn(async move {
+            let _ = permit.acquire().await.unwrap();
+            let img_id = entry
+                .path()
+                .file_stem()
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .to_string();
+            let img =
+                imgcodecs::imread(entry.path().to_str().unwrap(), imgcodecs::IMREAD_COLOR).unwrap();
+
+            let vertical_count = img.rows() / target_height as i32;
+            let horizontal_count = img.cols() / target_width as i32;
+            let mut imgs_map = HashMap::<String, Mat>::new();
+
+            // Crop horizontally from left
+            for horizontal_index in 0..horizontal_count {
+                for vertical_index in 0..vertical_count {
+                    let cropped = core::Mat::roi(
+                        &img,
+                        core::Rect::new(
+                            horizontal_index * target_width as i32,
+                            vertical_index * target_height as i32,
+                            target_width as i32,
+                            target_height as i32,
+                        ),
+                    )
+                    .unwrap()
+                    .clone_pointee();
+                    imgs_map.insert(
+                        format!("{}_lt2rb_{}_{}", img_id, horizontal_index, vertical_index),
+                        cropped,
+                    );
+                }
+            }
+
+            // Crop horizontally from right
+            for horizontal_index in 0..horizontal_count {
+                for vertical_index in 0..vertical_count {
+                    let cropped = core::Mat::roi(
+                        &img,
+                        core::Rect::new(
+                            img.cols() - (horizontal_index + 1) * target_width as i32,
+                            img.rows() - (vertical_index + 1) * target_height as i32,
+                            target_width as i32,
+                            target_height as i32,
+                        ),
+                    )
+                    .unwrap()
+                    .clone_pointee();
+                    imgs_map.insert(
+                        format!("{}_rb2lt_{}_{}", img_id, horizontal_index, vertical_index),
+                        cropped,
+                    );
+                }
+            }
+
+            cropped_images.lock().unwrap().extend(imgs_map);
+            log::info!("Image {} process done", img_id);
+        });
     }
+
     while threads.join_next().await.is_some() {}
+
+    let mut label_extension = None;
     for entry in label_entries {
         let entry = entry.unwrap();
-        if entry
-            .path()
-            .file_name()
-            .unwrap()
-            .to_str()
-            .unwrap()
-            .ends_with(".png")
-        {
-            let permit = Arc::clone(&sem);
-            let cropped_labels = Arc::clone(&cropped_labels);
-            let cropped_images = Arc::clone(&cropped_images);
 
-            let target_width = *target_width;
-            let target_height = *target_height;
-
-            let valid_rgb_list = Arc::clone(&valid_rgb_list);
-            threads.spawn(async move {
-                let _ = permit.acquire().await.unwrap();
-                let label_id = entry
-                    .path()
-                    .file_name()
-                    .unwrap()
-                    .to_str()
-                    .unwrap()
-                    .replace(".png", "");
-                let img = image::open(entry.path()).unwrap();
-                let vertical_count = img.height() / target_height;
-                let horizontal_count = img.width() / target_width;
-                let mut labels_map = HashMap::<String, RgbImage>::new();
-                // crop horizentally from left
-                for horizontal_index in 0..horizontal_count {
-                    // crop vertically from top
-                    for vertical_index in 0..vertical_count {
-                        labels_map.insert(
-                            format!("{}_lt2rb_{}_{}", label_id, horizontal_index, vertical_index),
-                            img.crop_imm(
-                                horizontal_index * target_width,
-                                vertical_index * target_height,
-                                target_width,
-                                target_height,
-                            )
-                            .into_rgb8(),
-                        );
-                    }
-                }
-                // crop horizentally from right
-                for horizontal_index in 0..horizontal_count {
-                    // crop vertically from bottom
-                    for vertical_index in 0..vertical_count {
-                        labels_map.insert(
-                            format!("{}_rb2lt_{}_{}", label_id, horizontal_index, vertical_index),
-                            img.crop_imm(
-                                img.width() - (horizontal_index + 1) * target_width,
-                                img.height() - (vertical_index + 1) * target_height,
-                                target_width,
-                                target_height,
-                            )
-                            .into_rgb8(),
-                        );
-                    }
-                }
-
-                let mut useless_img_id = Vec::<String>::new();
-                let valid_rgb_list = valid_rgb_list.try_read().unwrap();
-                for (label_id, label) in labels_map.iter() {
-                    if check_valid_pixel_count(label, &valid_rgb_list) {
-                        continue;
-                    }
-                    useless_img_id.push(label_id.clone());
-                }
-
-                let mut cropped_labels = cropped_labels.lock().unwrap();
-                let mut cropped_images = cropped_images.lock().unwrap();
-                for img_id in useless_img_id {
-                    labels_map.remove(&img_id);
-                    cropped_images.remove(&img_id);
-                }
-                cropped_labels.extend(labels_map);
-                println!("Label {} process done", label_id)
-            });
+        if label_extension.is_none() {
+            let extension = entry
+                .path()
+                .extension()
+                .unwrap()
+                .to_os_string()
+                .into_string()
+                .unwrap();
+            label_extension = Some(extension);
         }
+
+        let permit = Arc::clone(&sem);
+        let cropped_labels = Arc::clone(&cropped_labels);
+        let cropped_images = Arc::clone(&cropped_images);
+        let target_width = *target_width;
+        let target_height = *target_height;
+        let valid_rgb_list = Arc::clone(&valid_rgb_list);
+
+        threads.spawn(async move {
+            let _ = permit.acquire().await.unwrap();
+            let label_id = entry
+                .path()
+                .file_stem()
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .to_string();
+            let img =
+                imgcodecs::imread(entry.path().to_str().unwrap(), imgcodecs::IMREAD_COLOR).unwrap();
+
+            let vertical_count = img.rows() / target_height as i32;
+            let horizontal_count = img.cols() / target_width as i32;
+            let mut labels_map = HashMap::<String, Mat>::new();
+
+            // Crop horizontally from left
+            for horizontal_index in 0..horizontal_count {
+                for vertical_index in 0..vertical_count {
+                    let cropped = core::Mat::roi(
+                        &img,
+                        core::Rect::new(
+                            horizontal_index * target_width as i32,
+                            vertical_index * target_height as i32,
+                            target_width as i32,
+                            target_height as i32,
+                        ),
+                    )
+                    .unwrap()
+                    .clone_pointee();
+                    labels_map.insert(
+                        format!("{}_lt2rb_{}_{}", label_id, horizontal_index, vertical_index),
+                        cropped,
+                    );
+                }
+            }
+
+            // Crop horizontally from right
+            for horizontal_index in 0..horizontal_count {
+                for vertical_index in 0..vertical_count {
+                    let cropped = core::Mat::roi(
+                        &img,
+                        core::Rect::new(
+                            img.cols() - (horizontal_index + 1) * target_width as i32,
+                            img.rows() - (vertical_index + 1) * target_height as i32,
+                            target_width as i32,
+                            target_height as i32,
+                        ),
+                    )
+                    .unwrap()
+                    .clone_pointee();
+                    labels_map.insert(
+                        format!("{}_rb2lt_{}_{}", label_id, horizontal_index, vertical_index),
+                        cropped,
+                    );
+                }
+            }
+
+            let mut useless_img_id = Vec::<String>::new();
+            let valid_rgb_list = valid_rgb_list.read().unwrap();
+            for (label_id, label) in labels_map.iter() {
+                if check_valid_pixel_count(label, &valid_rgb_list) {
+                    continue;
+                }
+                useless_img_id.push(label_id.clone());
+            }
+
+            let mut cropped_labels = cropped_labels.lock().unwrap();
+            let mut cropped_images = cropped_images.lock().unwrap();
+            for img_id in useless_img_id {
+                labels_map.remove(&img_id);
+                cropped_images.remove(&img_id);
+            }
+            cropped_labels.extend(labels_map);
+            log::info!("Label {} process done", label_id);
+        });
     }
 
     while threads.join_next().await.is_some() {}
 
-    println!("Labels process done");
+    log::info!("Labels process done");
+
+    fs::create_dir_all(format!("{}\\output\\", image_path)).unwrap();
+    fs::create_dir_all(format!("{}\\output\\", label_path)).unwrap();
 
     let cropped_labels = cropped_labels.lock().unwrap();
     for (label_id, label) in cropped_labels.iter() {
-        label
-            .save(format!(
-                "{}\\labels\\output\\{}.png",
-                dataset_path, label_id
-            ))
-            .unwrap();
-        println!("Label {} saved", label_id);
+        imgcodecs::imwrite(
+            &format!(
+                "{}\\output\\{}.{}",
+                label_path,
+                label_id,
+                label_extension.as_ref().unwrap()
+            ),
+            label,
+            &core::Vector::new(),
+        )
+        .unwrap();
+        log::info!("Label {} saved", label_id);
     }
+
     let cropped_images = cropped_images.lock().unwrap();
     for (img_id, img) in cropped_images.iter() {
-        img.save(format!("{}\\images\\output\\{}.png", dataset_path, img_id))
-            .unwrap();
-        println!("Image {} saved", img_id)
+        imgcodecs::imwrite(
+            &format!(
+                "{}\\output\\{}.{}",
+                image_path,
+                img_id,
+                image_extension.as_ref().unwrap()
+            ),
+            img,
+            &core::Vector::new(),
+        )
+        .unwrap();
+        log::info!("Image {} saved", img_id);
     }
 }

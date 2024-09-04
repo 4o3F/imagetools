@@ -97,7 +97,10 @@ enum CommonCommands {
     /// Split large images to small pieces with a filter for enough valid pixels
     SplitImagesWithFilter {
         #[arg(short, long, help = "The path for the folder containing images")]
-        dataset_path: String,
+        image_path: String,
+
+        #[arg(short, long, help = "The path for the folder containing labels")]
+        label_path: String,
 
         #[arg(short, long, help = "Valid RGB list, in R0,G0,B0;R1,G1,B1 format")]
         valid_rgb_list: String,
@@ -286,13 +289,15 @@ async fn main() {
                 .await;
             }
             CommonCommands::SplitImagesWithFilter {
-                dataset_path,
+                image_path,
+                label_path,
                 target_height,
                 target_width,
                 valid_rgb_list,
             } => {
                 common::augment::split_images_with_filter(
-                    dataset_path,
+                    image_path,
+                    label_path,
                     target_height,
                     target_width,
                     valid_rgb_list,

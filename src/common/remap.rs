@@ -245,4 +245,6 @@ pub async fn rgb2class(dataset_path: &String, rgb_list: &str) {
             }
         }
     }
+    log::info!("All done");
+    log::info!("Saved to {}\\..\\output\\", dataset_path);
 }
