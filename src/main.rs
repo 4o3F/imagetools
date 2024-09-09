@@ -206,6 +206,12 @@ enum CommonCommands {
         #[arg(short, long, help = "The strip length")]
         length: i32,
     },
+
+    /// Calc the mean and std of a dataset for normalization
+    CalcMeanStd {
+        #[arg(short, long, help = "The path for the folder containing images")]
+        dataset_path: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -358,6 +364,9 @@ async fn main() {
                 };
                 common::operation::strip_image_edge(source_path, save_path, &direction, length)
                     .await;
+            }
+            CommonCommands::CalcMeanStd { dataset_path } => {
+                common::dataset::calc_mean_std(dataset_path).await;
             }
         },
         Some(Commands::Yolo { command }) => match command {

@@ -4,6 +4,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+use opencv::{core, imgcodecs};
 use tokio::{sync::Semaphore, task::JoinSet};
 
 pub async fn split_dataset(dataset_path: &String, train_ratio: &f32) {
@@ -19,12 +20,7 @@ pub async fn split_dataset(dataset_path: &String, train_ratio: &f32) {
             let _permit = permit.acquire().await.unwrap();
             result.lock().unwrap().push(format!(
                 "{}\n",
-                entry
-                    .path()
-                    .file_name()
-                    .unwrap()
-                    .to_str()
-                    .unwrap()
+                entry.path().file_name().unwrap().to_str().unwrap()
             ));
         });
     }
@@ -105,4 +101,59 @@ pub async fn count_classes(dataset_path: &String) {
     }
 
     log::info!("Inverse class weights: {:?}", weight_map);
+}
+
+pub async fn calc_mean_std(dataset_path: &String) {
+    let entries = fs::read_dir(dataset_path).unwrap();
+    let mut threads = JoinSet::new();
+    let mean_map = Arc::new(Mutex::new(HashMap::<usize, Vec<f64>>::new()));
+    let std_map = Arc::new(Mutex::new(HashMap::<usize, Vec<f64>>::new()));
+    for entry in entries {
+        let entry = entry.unwrap();
+        let mean_map = Arc::clone(&mean_map);
+        let std_map = Arc::clone(&std_map);
+        threads.spawn(async move {
+            let image =
+                imgcodecs::imread(entry.path().to_str().unwrap(), imgcodecs::IMREAD_UNCHANGED)
+                    .unwrap();
+
+            let mut mean = core::Vector::<f64>::new();
+            let mut stddev = core::Vector::<f64>::new();
+            core::mean_std_dev(&image, &mut mean, &mut stddev, &core::no_array()).unwrap();
+
+            let mut mean_map = mean_map.lock().unwrap();
+            let mut std_map = std_map.lock().unwrap();
+            for i in 0..mean.len() {
+                if !mean_map.contains_key(&i) {
+                    mean_map.insert(i, Vec::<f64>::new());
+                    std_map.insert(i, Vec::<f64>::new());
+                }
+                mean_map.get_mut(&i).unwrap().push(mean.get(i).unwrap());
+                std_map.get_mut(&i).unwrap().push(stddev.get(i).unwrap());
+            }
+        });
+    }
+
+    while threads.join_next().await.is_some() {}
+
+    let mean_map = mean_map.lock().unwrap();
+    let std_map = std_map.lock().unwrap();
+
+    assert_eq!(mean_map.len(), std_map.len());
+
+    let mut mean_vec = Vec::<f64>::with_capacity(mean_map.len());
+    for (i, mean) in mean_map.iter() {
+        let mean = mean.iter().sum::<f64>() / mean.len() as f64;
+        *mean_vec.get_mut(*i).unwrap() = mean;
+    }
+
+    let mut std_vec = Vec::<f64>::with_capacity(std_map.len());
+    for (i, std) in std_map.iter() {
+        let std = std.iter().sum::<f64>() / std.len() as f64;
+        *std_vec.get_mut(*i).unwrap() = std;
+    }
+
+    log::info!("Mean: {:?}", mean_vec);
+    log::info!("Std: {:?}", std_vec);
+    log::info!("Dataset calculated");
 }
