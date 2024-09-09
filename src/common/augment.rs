@@ -307,6 +307,8 @@ pub async fn split_images_with_filter(
         valid_rgb_list.push(core::Vec3b::from([rgb_vec[0], rgb_vec[1], rgb_vec[2]]));
     }
 
+    log::info!("Valid rgb list length: {}", valid_rgb_list.read().unwrap().len());
+
     let image_entries = fs::read_dir(image_path).unwrap();
     let label_entries = fs::read_dir(label_path).unwrap();
     let sem = Arc::new(Semaphore::new(3));
@@ -314,9 +316,16 @@ pub async fn split_images_with_filter(
     let cropped_labels = Arc::new(Mutex::new(HashMap::<String, Mat>::new()));
     let mut threads = tokio::task::JoinSet::new();
 
+    fs::create_dir_all(format!("{}\\output\\", image_path)).unwrap();
+    fs::create_dir_all(format!("{}\\output\\", label_path)).unwrap();
+
     let mut image_extension = None;
     for entry in image_entries {
         let entry = entry.unwrap();
+
+        if !entry.path().is_file() {
+            continue;
+        }
 
         if image_extension.is_none() {
             let extension = entry
@@ -344,7 +353,7 @@ pub async fn split_images_with_filter(
                 .unwrap()
                 .to_string();
             let img =
-                imgcodecs::imread(entry.path().to_str().unwrap(), imgcodecs::IMREAD_COLOR).unwrap();
+                imgcodecs::imread(entry.path().to_str().unwrap(), imgcodecs::IMREAD_UNCHANGED).unwrap();
 
             let vertical_count = img.rows() / target_height as i32;
             let horizontal_count = img.cols() / target_width as i32;
@@ -403,6 +412,10 @@ pub async fn split_images_with_filter(
     for entry in label_entries {
         let entry = entry.unwrap();
 
+        if !entry.path().is_file() {
+            continue;
+        }
+
         if label_extension.is_none() {
             let extension = entry
                 .path()
@@ -431,7 +444,7 @@ pub async fn split_images_with_filter(
                 .unwrap()
                 .to_string();
             let img =
-                imgcodecs::imread(entry.path().to_str().unwrap(), imgcodecs::IMREAD_COLOR).unwrap();
+                imgcodecs::imread(entry.path().to_str().unwrap(), imgcodecs::IMREAD_UNCHANGED).unwrap();
 
             let vertical_count = img.rows() / target_height as i32;
             let horizontal_count = img.cols() / target_width as i32;
@@ -502,9 +515,6 @@ pub async fn split_images_with_filter(
     while threads.join_next().await.is_some() {}
 
     log::info!("Labels process done");
-
-    fs::create_dir_all(format!("{}\\output\\", image_path)).unwrap();
-    fs::create_dir_all(format!("{}\\output\\", label_path)).unwrap();
 
     let cropped_labels = cropped_labels.lock().unwrap();
     for (label_id, label) in cropped_labels.iter() {
