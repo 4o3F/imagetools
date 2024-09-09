@@ -108,11 +108,14 @@ pub async fn calc_mean_std(dataset_path: &String) {
     let mut threads = JoinSet::new();
     let mean_map = Arc::new(Mutex::new(HashMap::<usize, Vec<f64>>::new()));
     let std_map = Arc::new(Mutex::new(HashMap::<usize, Vec<f64>>::new()));
+    let sem = Arc::new(Semaphore::new(10));
     for entry in entries {
         let entry = entry.unwrap();
         let mean_map = Arc::clone(&mean_map);
         let std_map = Arc::clone(&std_map);
+        let sem = Arc::clone(&sem);
         threads.spawn(async move {
+            let _permit = sem.acquire().await.unwrap();
             let image =
                 imgcodecs::imread(entry.path().to_str().unwrap(), imgcodecs::IMREAD_UNCHANGED)
                     .unwrap();
@@ -123,34 +126,48 @@ pub async fn calc_mean_std(dataset_path: &String) {
 
             let mut mean_map = mean_map.lock().unwrap();
             let mut std_map = std_map.lock().unwrap();
-            for i in 0..mean.len() {
+            for i in 1..=mean.len() {
                 if !mean_map.contains_key(&i) {
                     mean_map.insert(i, Vec::<f64>::new());
                     std_map.insert(i, Vec::<f64>::new());
                 }
-                mean_map.get_mut(&i).unwrap().push(mean.get(i).unwrap());
-                std_map.get_mut(&i).unwrap().push(stddev.get(i).unwrap());
+                mean_map.get_mut(&i).unwrap().push(mean.get(i - 1).unwrap());
+                std_map
+                    .get_mut(&i)
+                    .unwrap()
+                    .push(stddev.get(i - 1).unwrap());
             }
+
+            log::info!("Image {} done", entry.path().display());
         });
     }
 
-    while threads.join_next().await.is_some() {}
+    while let Some(result) = threads.join_next().await {
+        match result {
+            Ok(()) => {}
+            Err(e) => {
+                log::error!("Error {}", e);
+                threads.abort_all();
+                break;
+            }
+        }
+    }
 
     let mean_map = mean_map.lock().unwrap();
     let std_map = std_map.lock().unwrap();
 
     assert_eq!(mean_map.len(), std_map.len());
 
-    let mut mean_vec = Vec::<f64>::with_capacity(mean_map.len());
+    let mut mean_vec: Vec<f64> = vec![0.0; mean_map.len()];
     for (i, mean) in mean_map.iter() {
         let mean = mean.iter().sum::<f64>() / mean.len() as f64;
-        *mean_vec.get_mut(*i).unwrap() = mean;
+        *mean_vec.get_mut(*i - 1).unwrap() = mean;
     }
 
-    let mut std_vec = Vec::<f64>::with_capacity(std_map.len());
+    let mut std_vec: Vec<f64> = vec![0.0; std_map.len()];
     for (i, std) in std_map.iter() {
         let std = std.iter().sum::<f64>() / std.len() as f64;
-        *std_vec.get_mut(*i).unwrap() = std;
+        *std_vec.get_mut(*i - 1).unwrap() = std;
     }
 
     log::info!("Mean: {:?}", mean_vec);
