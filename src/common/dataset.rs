@@ -55,13 +55,14 @@ pub async fn count_classes(dataset_path: &String) {
     let entries = fs::read_dir(dataset_path).unwrap();
 
     let type_map = Arc::new(Mutex::new(HashMap::<u8, i32>::new()));
-
+    let sem = Arc::new(Semaphore::new(5));
     let mut threads = JoinSet::new();
     for entry in entries {
         let entry = entry.unwrap();
         let type_map = Arc::clone(&type_map);
-
+        let sem = Arc::clone(&sem);
         threads.spawn(async move {
+            let _ = sem.acquire().await.unwrap();
             let image = image::open(entry.path()).unwrap();
             let image = image.as_luma8().unwrap();
             log::info!("Loaded image: {}", entry.path().display());
@@ -85,7 +86,16 @@ pub async fn count_classes(dataset_path: &String) {
         });
     }
 
-    while threads.join_next().await.is_some() {}
+    while let Some(result) = threads.join_next().await {
+        match result {
+            Ok(()) => {}
+            Err(e) => {
+                log::error!("Error {}", e);
+                threads.abort_all();
+                break;
+            }
+        }
+    }
     log::info!("Dataset counted");
 
     let type_map = type_map.lock().unwrap();
