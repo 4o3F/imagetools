@@ -1,12 +1,12 @@
+use image::{GrayImage, Luma, Rgb, RgbImage};
 use std::{
     collections::HashMap,
     fs,
     ops::Deref,
     sync::{Arc, RwLock},
 };
-
-use image::{GrayImage, Luma, Rgb, RgbImage};
 use tokio::{sync::Semaphore, task::JoinSet};
+use tracing_unwrap::OptionExt;
 
 pub fn remap_color(original_color: &str, new_color: &str, image_path: &String, save_path: &String) {
     let mut original_color_vec: Vec<u8> = vec![];

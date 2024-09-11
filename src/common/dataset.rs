@@ -6,6 +6,8 @@ use std::{
 
 use opencv::{core::{self, MatTraitConst}, imgcodecs};
 use tokio::{sync::Semaphore, task::JoinSet};
+use tracing_unwrap::OptionExt;
+
 
 pub async fn split_dataset(dataset_path: &String, train_ratio: &f32) {
     let entries = fs::read_dir(dataset_path).unwrap();

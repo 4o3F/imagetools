@@ -1,7 +1,7 @@
 use clap::{Parser, Subcommand};
 use common::operation::EdgePosition;
 use tracing::Level;
-use tracing_unwrap::ResultExt;
+use tracing_unwrap::{OptionExt, ResultExt};
 
 mod common;
 mod yolo;

@@ -2,6 +2,7 @@ use image::imageops::FilterType;
 use opencv::{core, core::MatTraitConst, imgcodecs};
 use std::{fs, io::Cursor, sync::Arc};
 use tokio::{fs::File, io::AsyncWriteExt, sync::Semaphore, task::JoinSet};
+use tracing_unwrap::OptionExt;
 
 pub async fn resize_images(
     dataset_path: &String,

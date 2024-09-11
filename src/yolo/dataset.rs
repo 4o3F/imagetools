@@ -6,6 +6,7 @@ use std::{
 
 use itertools::Itertools;
 use tokio::{sync::Semaphore, task::JoinSet};
+use tracing_unwrap::OptionExt;
 
 pub async fn split_dataset(dataset_path: &String) {
     let entries = fs::read_dir(dataset_path).unwrap();
