@@ -57,8 +57,18 @@ pub async fn split_images(dataset_path: &String, target_height: &u32, target_wid
 
             let size = img.size().expect_or_log("Failed to get image size");
             let (width, height) = (size.width as u32, size.height as u32);
+            
+            tracing::trace!("Image {} size {}x{}", file_name, width, height);
+
             let vertical_count = height / target_height;
             let horizontal_count = width / target_width;
+
+            tracing::trace!(
+                "Image {} vertical_count {} horizontal_count {}",
+                file_name,
+                vertical_count,
+                horizontal_count
+            );
 
             // LTR
             'outer: for horizontal_index in 0..horizontal_count {
