@@ -12,16 +12,14 @@ ndarray = "*"
 rand = "*"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1.0.114"
-# pyo3 = "0.20.3"
 tokio = { version = "1", features = ["full"] }
 opencv = { version = "0.89.0", default-features = false, features = [
     "clang-runtime",
     "imgproc",
     "imgcodecs",
 ] }
-lab = "0.11.0"
 itertools = "0.12.1"
-tiff = "0.9.1"
 clap = { version = "4.5.9", features = ["derive"] }
-log = "0.4.22"
-env_logger = "0.11.5"
+tracing-subscriber = "0.3.18"
+tracing = "0.1.40"
+tracing-unwrap = "1.0.1"

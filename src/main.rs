@@ -1,5 +1,7 @@
 use clap::{Parser, Subcommand};
 use common::operation::EdgePosition;
+use tracing::Level;
+use tracing_unwrap::ResultExt;
 
 mod common;
 mod yolo;
@@ -250,7 +252,15 @@ enum YoloCommands {
 
 #[tokio::main]
 async fn main() {
-    env_logger::init();
+    // env_logger::init();
+
+    // Do tracing init
+    let subscriber = tracing_subscriber::fmt()
+        .with_max_level(Level::TRACE)
+        .with_level(true)
+        .finish();
+
+    tracing::subscriber::set_global_default(subscriber).expect_or_log("Init tracing failed");
 
     let cli = Cli::parse();
 
@@ -358,7 +368,7 @@ async fn main() {
                     "left" => EdgePosition::Left,
                     "right" => EdgePosition::Right,
                     _ => {
-                        log::error!("Invalid strip direction");
+                        tracing::error!("Invalid strip direction");
                         return;
                     }
                 };
@@ -384,7 +394,7 @@ async fn main() {
             }
         },
         None => {
-            log::error!("No command specified, use --help for more information");
+            tracing::error!("No command specified, use --help for more information");
         }
     }
 

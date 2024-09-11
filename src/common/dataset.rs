@@ -44,11 +44,11 @@ pub async fn split_dataset(dataset_path: &String, train_ratio: &f32) {
         train_data.concat(),
     )
     .unwrap();
-    log::info!("Train dataset length: {}", train_data.len());
-    log::info!("Saved to {}\\..\\train.txt", dataset_path);
-    log::info!("Valid dataset length: {}", valid_data.len());
-    log::info!("Saved to {}\\..\\val.txt", dataset_path);
-    log::info!("Dataset split done");
+    tracing::info!("Train dataset length: {}", train_data.len());
+    tracing::info!("Saved to {}\\..\\train.txt", dataset_path);
+    tracing::info!("Valid dataset length: {}", valid_data.len());
+    tracing::info!("Saved to {}\\..\\val.txt", dataset_path);
+    tracing::info!("Dataset split done");
 }
 
 pub async fn count_classes(dataset_path: &String) {
@@ -65,7 +65,7 @@ pub async fn count_classes(dataset_path: &String) {
             let _ = sem.acquire().await.unwrap();
             let image = image::open(entry.path()).unwrap();
             let image = image.as_luma8().unwrap();
-            log::info!("Loaded image: {}", entry.path().display());
+            tracing::info!("Loaded image: {}", entry.path().display());
             let mut current_img_type_map = HashMap::<u8, i32>::new();
             for (_, _, pixel) in image.enumerate_pixels() {
                 if !current_img_type_map.contains_key(&pixel[0]) {
@@ -82,7 +82,7 @@ pub async fn count_classes(dataset_path: &String) {
                 *total_count += count;
             }
 
-            log::info!("Image {} done", entry.path().display());
+            tracing::info!("Image {} done", entry.path().display());
         });
     }
 
@@ -90,16 +90,16 @@ pub async fn count_classes(dataset_path: &String) {
         match result {
             Ok(()) => {}
             Err(e) => {
-                log::error!("Error {}", e);
+                tracing::error!("Error {}", e);
                 threads.abort_all();
                 break;
             }
         }
     }
-    log::info!("Dataset counted");
+    tracing::info!("Dataset counted");
 
     let type_map = type_map.lock().unwrap();
-    log::info!("Classes counts: {:?}", type_map);
+    tracing::info!("Classes counts: {:?}", type_map);
 
     let total_pixel = type_map.values().sum::<i32>();
 
@@ -110,7 +110,7 @@ pub async fn count_classes(dataset_path: &String) {
         weight_map.insert(*class_id, class_weight);
     }
 
-    log::info!("Inverse class weights: {:?}", weight_map);
+    tracing::info!("Inverse class weights: {:?}", weight_map);
 }
 
 pub async fn calc_mean_std(dataset_path: &String) {
@@ -136,7 +136,7 @@ pub async fn calc_mean_std(dataset_path: &String) {
             let mut mean = core::Vector::<f64>::new();
             let mut stddev = core::Vector::<f64>::new();
             if image.empty() {
-                log::error!("Image {} is empty", entry.path().display());
+                tracing::error!("Image {} is empty", entry.path().display());
                 return;
             }
             core::mean_std_dev(&image, &mut mean, &mut stddev, &core::no_array()).unwrap();
@@ -155,7 +155,7 @@ pub async fn calc_mean_std(dataset_path: &String) {
                     .push(stddev.get(i - 1).unwrap());
             }
 
-            log::info!("Image {} done", entry.path().display());
+            tracing::info!("Image {} done", entry.path().display());
         });
     }
 
@@ -163,7 +163,7 @@ pub async fn calc_mean_std(dataset_path: &String) {
         match result {
             Ok(()) => {}
             Err(e) => {
-                log::error!("Error {}", e);
+                tracing::error!("Error {}", e);
                 threads.abort_all();
                 break;
             }
@@ -187,7 +187,7 @@ pub async fn calc_mean_std(dataset_path: &String) {
         *std_vec.get_mut(*i - 1).unwrap() = std;
     }
 
-    log::info!("Mean: {:?}", mean_vec);
-    log::info!("Std: {:?}", std_vec);
-    log::info!("Dataset calculated");
+    tracing::info!("Mean: {:?}", mean_vec);
+    tracing::info!("Std: {:?}", std_vec);
+    tracing::info!("Dataset calculated");
 }

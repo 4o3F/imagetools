@@ -235,11 +235,11 @@ impl From<&object_detection::Rle> for object_detection::Polygons {
         let mask_img = mask
             .as_slice_memory_order()
             .map(|slice| {
-                image::GrayImage::from_raw(rle.size[1], rle.size[0], slice.to_owned()).expect(
+                image::GrayImage::from_raw(rle.size[1], rle.size[0], slice.to_owned()).expect_or_log(
                     "Buffer already contains a mask created using the rle sizes and is threfore big enough."
                 )
             })
-            .expect("The mask is created just above and should therefore be continuous in memory.");
+            .expect_or_log("The mask is created just above and should therefore be continuous in memory.");
 
         let contours = contours::find_contours::<u32>(&mask_img);
 
@@ -315,9 +315,9 @@ impl From<&object_detection::Rle> for Mask {
         let mut mask: Self = Self::zeros((height, width).f());
         let mut mask_1d = ArrayViewMut::from_shape(
             (height * width).f(),
-            mask.as_slice_memory_order_mut().expect("The mask array is created just above, there shouldn't be any error when creating a view of it"),
+            mask.as_slice_memory_order_mut().expect_or_log("The mask array is created just above, there shouldn't be any error when creating a view of it"),
         )
-        .expect("The mask array is created just above, there shouldn't be any error when creating a view of it");
+        .expect_or_log("The mask array is created just above, there shouldn't be any error when creating a view of it");
 
         let mut current_value = 0u8;
         let mut current_position = 0usize;

@@ -7,29 +7,55 @@ use std::{
 use tokio::{sync::Semaphore, task::JoinSet};
 
 use opencv::{core, imgcodecs, prelude::*};
+use tracing_unwrap::{OptionExt, ResultExt};
 
 pub async fn split_images(dataset_path: &String, target_height: &u32, target_width: &u32) {
-    let entries = fs::read_dir(dataset_path).unwrap();
+    let entries = fs::read_dir(dataset_path).expect_or_log("Failed to read directory");
     let mut threads = JoinSet::new();
 
-    fs::create_dir_all(format!("{}\\..\\output\\", dataset_path)).unwrap();
+    fs::create_dir_all(format!("{}\\..\\output\\", dataset_path))
+        .expect_or_log("Failed to create directory");
 
     for entry in entries {
-        let entry = entry.unwrap();
+        let entry = entry.expect_or_log("Failed to iterate entries");
         let dataset_path = dataset_path.clone();
         let target_height = *target_height;
         let target_width = *target_width;
-        let entry_path = entry.path().to_str().unwrap().to_string();
+        let entry_path = entry
+            .path()
+            .to_str()
+            .expect_or_log("Failed to convert path to string")
+            .to_owned();
 
         threads.spawn(async move {
-            log::info!(
-                "Image {} processing...",
-                entry.file_name().to_str().unwrap()
-            );
+            let file_name = entry
+                .file_name()
+                .to_str()
+                .expect_or_log("Failed to get file name")
+                .to_owned();
+            tracing::info!("Image {} processing...", file_name);
+
+            let file_stem = entry
+                .path()
+                .file_stem()
+                .expect_or_log("Failed to get file stem")
+                .to_str()
+                .expect_or_log("Failed to convert file stem to string")
+                .to_owned();
+
+            let file_extension = entry
+                .path()
+                .extension()
+                .expect_or_log("Failed to get file extension")
+                .to_str()
+                .expect_or_log("Failed to convert file extension to string")
+                .to_owned();
 
             // 读取图片
-            let img = imgcodecs::imread(&entry_path, imgcodecs::IMREAD_UNCHANGED).unwrap();
-            let size = img.size().unwrap();
+            let img = imgcodecs::imread(&entry_path, imgcodecs::IMREAD_UNCHANGED)
+                .expect_or_log(format!("Failed to read image: {}", entry_path).as_str());
+
+            let size = img.size().expect_or_log("Failed to get image size");
             let (width, height) = (size.width as u32, size.height as u32);
             let vertical_count = height / target_height;
             let horizontal_count = width / target_width;
@@ -56,24 +82,26 @@ pub async fn split_images(dataset_path: &String, target_height: &u32, target_wid
                             target_height as i32,
                         ),
                     )
-                    .unwrap();
-                    imgcodecs::imwrite(
-                        format!(
-                            "{}\\..\\output\\{}_LTR_h{}_v{}.{}",
-                            dataset_path,
-                            entry.path().file_stem().unwrap().to_str().unwrap(),
-                            horizontal_index,
-                            vertical_index,
-                            entry.path().extension().unwrap().to_str().unwrap()
-                        )
-                        .as_str(),
-                        &cropped_img,
-                        &core::Vector::new(),
-                    )
-                    .unwrap();
+                    .expect_or_log("Failed to crop image");
+                    let path = format!(
+                        "{}\\..\\output\\{}_LTR_h{}_v{}.{}",
+                        dataset_path, file_stem, horizontal_index, vertical_index, file_extension
+                    );
+                    let result =
+                        imgcodecs::imwrite(path.as_str(), &cropped_img, &core::Vector::new())
+                            .expect_or_log(
+                                format!(
+                                    "Failed to save image: {} opencv imwrite internal error",
+                                    path
+                                )
+                                .as_str(),
+                            );
+                    if !result {
+                        tracing::error!("Failed to save image {}", path);
+                    }
                 }
             }
-            log::info!("Image LTR {} done", entry.file_name().to_str().unwrap(),);
+            tracing::info!("Image LTR {} done", entry.file_name().to_str().unwrap());
 
             // RTL
             'outer: for horizontal_index in 0..horizontal_count {
@@ -103,29 +131,41 @@ pub async fn split_images(dataset_path: &String, target_height: &u32, target_wid
                             target_height as i32,
                         ),
                     )
-                    .unwrap();
-                    imgcodecs::imwrite(
-                        format!(
-                            "{}\\..\\output\\{}_RTL_h{}_v{}.{}",
-                            dataset_path,
-                            entry.path().file_stem().unwrap().to_str().unwrap(),
-                            horizontal_index,
-                            vertical_index,
-                            entry.path().extension().unwrap().to_str().unwrap()
-                        )
-                        .as_str(),
-                        &cropped_img,
-                        &core::Vector::new(),
-                    )
-                    .unwrap();
+                    .expect_or_log("Failed to crop image");
+                    let path = format!(
+                        "{}\\..\\output\\{}_RTL_h{}_v{}.{}",
+                        dataset_path, file_stem, horizontal_index, vertical_index, file_extension
+                    );
+                    let result =
+                        imgcodecs::imwrite(path.as_str(), &cropped_img, &core::Vector::new())
+                            .expect_or_log(
+                                format!(
+                                    "Failed to save image: {} opencv imwrite internal error",
+                                    path
+                                )
+                                .as_str(),
+                            );
+                    if !result {
+                        tracing::error!("Failed to save image {}", path);
+                    }
                 }
             }
-            log::info!("Image RTL {} done", entry.file_name().to_str().unwrap(),);
+            tracing::info!("Image RTL {} done", file_name,);
 
-            log::info!("Image {} done", entry.file_name().to_str().unwrap());
+            tracing::info!("Image {} done", file_name);
         });
     }
-    while threads.join_next().await.is_some() {}
+
+    while let Some(result) = threads.join_next().await {
+        match result {
+            Ok(_) => {}
+            Err(e) => {
+                tracing::error!("{}", e);
+            }
+        }
+    }
+
+    tracing::info!("Image split done");
 }
 
 pub async fn split_images_with_bias(
@@ -148,7 +188,7 @@ pub async fn split_images_with_bias(
         let entry_path = entry.path().to_str().unwrap().to_string();
 
         threads.spawn(async move {
-            log::info!(
+            tracing::info!(
                 "Image {} processing...",
                 entry.file_name().to_str().unwrap()
             );
@@ -202,7 +242,7 @@ pub async fn split_images_with_bias(
                         .unwrap();
                     }
                 }
-                log::info!(
+                tracing::info!(
                     "Image LTR {} bias {} done",
                     entry.file_name().to_str().unwrap(),
                     bias
@@ -257,14 +297,14 @@ pub async fn split_images_with_bias(
                         .unwrap();
                     }
                 }
-                log::info!(
+                tracing::info!(
                     "Image RTL {} bias {} done",
                     entry.file_name().to_str().unwrap(),
                     bias
                 );
             }
 
-            log::info!("Image {} done", entry.file_name().to_str().unwrap());
+            tracing::info!("Image {} done", entry.file_name().to_str().unwrap());
         });
     }
     while threads.join_next().await.is_some() {}
@@ -286,7 +326,7 @@ pub fn check_valid_pixel_count(img: &Mat, valid_rgb_list: &[core::Vec3b]) -> boo
 
     let ratio = (count as f32) / ((width * height) as f32);
     // if ratio > 0.01 {
-    //     log::info!("Valid ratio {}", ratio);
+    //     tracing::info!("Valid ratio {}", ratio);
     // }
     ratio > 0.01
 }
@@ -307,7 +347,10 @@ pub async fn split_images_with_filter(
         valid_rgb_list.push(core::Vec3b::from([rgb_vec[0], rgb_vec[1], rgb_vec[2]]));
     }
 
-    log::info!("Valid rgb list length: {}", valid_rgb_list.read().unwrap().len());
+    tracing::info!(
+        "Valid rgb list length: {}",
+        valid_rgb_list.read().unwrap().len()
+    );
 
     let image_entries = fs::read_dir(image_path).unwrap();
     let label_entries = fs::read_dir(label_path).unwrap();
@@ -353,7 +396,8 @@ pub async fn split_images_with_filter(
                 .unwrap()
                 .to_string();
             let img =
-                imgcodecs::imread(entry.path().to_str().unwrap(), imgcodecs::IMREAD_UNCHANGED).unwrap();
+                imgcodecs::imread(entry.path().to_str().unwrap(), imgcodecs::IMREAD_UNCHANGED)
+                    .unwrap();
 
             let vertical_count = img.rows() / target_height as i32;
             let horizontal_count = img.cols() / target_width as i32;
@@ -402,7 +446,7 @@ pub async fn split_images_with_filter(
             }
 
             cropped_images.lock().unwrap().extend(imgs_map);
-            log::info!("Image {} process done", img_id);
+            tracing::info!("Image {} process done", img_id);
         });
     }
 
@@ -444,7 +488,8 @@ pub async fn split_images_with_filter(
                 .unwrap()
                 .to_string();
             let img =
-                imgcodecs::imread(entry.path().to_str().unwrap(), imgcodecs::IMREAD_UNCHANGED).unwrap();
+                imgcodecs::imread(entry.path().to_str().unwrap(), imgcodecs::IMREAD_UNCHANGED)
+                    .unwrap();
 
             let vertical_count = img.rows() / target_height as i32;
             let horizontal_count = img.cols() / target_width as i32;
@@ -508,13 +553,13 @@ pub async fn split_images_with_filter(
                 cropped_images.remove(&img_id);
             }
             cropped_labels.extend(labels_map);
-            log::info!("Label {} process done", label_id);
+            tracing::info!("Label {} process done", label_id);
         });
     }
 
     while threads.join_next().await.is_some() {}
 
-    log::info!("Labels process done");
+    tracing::info!("Labels process done");
 
     let cropped_labels = cropped_labels.lock().unwrap();
     for (label_id, label) in cropped_labels.iter() {
@@ -529,7 +574,7 @@ pub async fn split_images_with_filter(
             &core::Vector::new(),
         )
         .unwrap();
-        log::info!("Label {} saved", label_id);
+        tracing::info!("Label {} saved", label_id);
     }
 
     let cropped_images = cropped_images.lock().unwrap();
@@ -545,6 +590,6 @@ pub async fn split_images_with_filter(
             &core::Vector::new(),
         )
         .unwrap();
-        log::info!("Image {} saved", img_id);
+        tracing::info!("Image {} saved", img_id);
     }
 }

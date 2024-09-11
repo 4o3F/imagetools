@@ -16,7 +16,7 @@ pub async fn resize_images(
         "gaussian" => FilterType::Gaussian,
         "lanczos" => FilterType::Lanczos3,
         _ => {
-            log::error!("Invalid filter type. Please use one of the following: nearest, linear, cubic, gaussian, lanczos");
+            tracing::error!("Invalid filter type. Please use one of the following: nearest, linear, cubic, gaussian, lanczos");
             return;
         }
     };
@@ -56,7 +56,7 @@ pub async fn resize_images(
                 .await
                 .unwrap();
                 file.write_all(&bytes).await.unwrap();
-                log::info!(
+                tracing::info!(
                     "Image {} done\n",
                     entry.path().file_name().unwrap().to_str().unwrap()
                 );
@@ -81,7 +81,7 @@ pub async fn strip_image_edge(
     length: &i32,
 ) {
     let img = imgcodecs::imread(source_path, imgcodecs::IMREAD_UNCHANGED).unwrap();
-    log::info!("Loaded image: {}", source_path);
+    tracing::info!("Loaded image: {}", source_path);
     let size = img.size().unwrap();
     let (width, height) = (size.width, size.height);
 
@@ -104,5 +104,5 @@ pub async fn strip_image_edge(
 
     imgcodecs::imwrite(save_path, &cropped_img, &core::Vector::new()).unwrap();
 
-    log::info!("Image {} done", save_path);
+    tracing::info!("Image {} done", save_path);
 }

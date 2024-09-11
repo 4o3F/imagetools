@@ -60,11 +60,11 @@ pub async fn split_dataset(dataset_path: &String) {
         train_data.concat(),
     )
     .unwrap();
-    log::info!("Train dataset length: {}", train_data.len());
-    log::info!("Saved to {}\\..\\train.txt", dataset_path);
-    log::info!("Valid dataset length: {}", valid_data.len());
-    log::info!("Saved to {}\\..\\val.txt", dataset_path);
-    log::info!("Dataset split done");
+    tracing::info!("Train dataset length: {}", train_data.len());
+    tracing::info!("Saved to {}\\..\\train.txt", dataset_path);
+    tracing::info!("Valid dataset length: {}", valid_data.len());
+    tracing::info!("Saved to {}\\..\\val.txt", dataset_path);
+    tracing::info!("Dataset split done");
 }
 
 pub async fn count_types(dataset_path: &String) {
@@ -99,6 +99,6 @@ pub async fn count_types(dataset_path: &String) {
     for key in type_map.keys().sorted() {
         let class_id = key;
         let count = type_map.get(class_id).unwrap();
-        log::info!("Class {}: {}", class_id, count);
+        tracing::info!("Class {}: {}", class_id, count);
     }
 }

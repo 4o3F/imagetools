@@ -22,7 +22,7 @@ pub fn remap_color(original_color: &str, new_color: &str, image_path: &String, s
     }
 
     let original_color_rgb: Rgb<u8> = if original_color_vec.len() != 3 {
-        log::error!("Malformed original color RGB, please use R,G,B format");
+        tracing::error!("Malformed original color RGB, please use R,G,B format");
         return;
     } else {
         Rgb([
@@ -33,7 +33,7 @@ pub fn remap_color(original_color: &str, new_color: &str, image_path: &String, s
     };
 
     let new_color_rgb: Rgb<u8> = if new_color_vec.len() != 3 {
-        log::error!("Malformed new color RGB, please use R,G,B format");
+        tracing::error!("Malformed new color RGB, please use R,G,B format");
         return;
     } else {
         Rgb([new_color_vec[0], new_color_vec[1], new_color_vec[2]])
@@ -48,7 +48,7 @@ pub fn remap_color(original_color: &str, new_color: &str, image_path: &String, s
     }
     img.save(save_path).unwrap();
 
-    log::info!("{} color remap done!", image_path);
+    tracing::info!("{} color remap done!", image_path);
 }
 
 pub async fn remap_color_dir(
@@ -103,7 +103,7 @@ pub async fn remap_color_dir(
 
     while threads.join_next().await.is_some() {}
 
-    log::info!("All color remap done!");
+    tracing::info!("All color remap done!");
 }
 
 pub async fn class2rgb(dataset_path: &String, rgb_list: &str) {
@@ -143,7 +143,7 @@ pub async fn class2rgb(dataset_path: &String, rgb_list: &str) {
                     .zip(mapped_img.enumerate_pixels_mut())
             {
                 if original_x != mapped_x || original_y != mapped_y {
-                    log::error!("Pixel coordinate mismatch");
+                    tracing::error!("Pixel coordinate mismatch");
                     return;
                 }
                 let Luma([g]) = original_pixel;
@@ -161,7 +161,7 @@ pub async fn class2rgb(dataset_path: &String, rgb_list: &str) {
                     entry.file_name().into_string().unwrap()
                 ))
                 .unwrap();
-            log::info!("{} finished", entry.file_name().into_string().unwrap());
+            tracing::info!("{} finished", entry.file_name().into_string().unwrap());
         });
     }
     while threads.join_next().await.is_some() {}
@@ -205,7 +205,7 @@ pub async fn rgb2class(dataset_path: &String, rgb_list: &str) {
                     .zip(mapped_img.enumerate_pixels_mut())
             {
                 if original_x != mapped_x || original_y != mapped_y {
-                    log::error!("Pixel coordinate mismatch");
+                    tracing::error!("Pixel coordinate mismatch");
                     return;
                 }
                 let Rgb([r, g, b]) = original_pixel;
@@ -213,7 +213,7 @@ pub async fn rgb2class(dataset_path: &String, rgb_list: &str) {
                 let new_color = match transform_map.get(&Rgb([*r, *g, *b])) {
                     Some(color) => color,
                     None => {
-                        log::error!(
+                        tracing::error!(
                             "Unknown color {},{},{} in {}",
                             r,
                             g,
@@ -232,19 +232,19 @@ pub async fn rgb2class(dataset_path: &String, rgb_list: &str) {
                     entry.file_name().into_string().unwrap()
                 ))
                 .unwrap();
-            log::info!("{} finished", entry.file_name().into_string().unwrap());
+            tracing::info!("{} finished", entry.file_name().into_string().unwrap());
         });
     }
     while let Some(result) = threads.join_next().await {
         match result {
             Ok(()) => {}
             Err(e) => {
-                log::error!("Error {}", e);
+                tracing::error!("Error {}", e);
                 threads.abort_all();
                 break;
             }
         }
     }
-    log::info!("All done");
-    log::info!("Saved to {}\\..\\output\\", dataset_path);
+    tracing::info!("All done");
+    tracing::info!("Saved to {}\\..\\output\\", dataset_path);
 }
