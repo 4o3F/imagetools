@@ -152,7 +152,7 @@ jobs:
         run: |
           $env:OPENCV_LINK_LIBS="opencv_core481,opencv_videoio481,opencv_imgcodecs481,opencv_imgproc481,ippiw,ittnotify,ippicvmt,zlib"
           $env:OPENCV_LINK_PATHS="D:/opt/opencv/staticlib"
-          $env:OPENCV_INCLUDE_PATHS="D:/opt/opencv/include"
+          $env:OPENCV_INCLUDE_PATHS="D:/opt/opencv/include/opencv2"
           $env:OPENCV_MSVC_CRT="static"
           cargo build --release
         
