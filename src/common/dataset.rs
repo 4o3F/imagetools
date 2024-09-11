@@ -4,7 +4,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use opencv::{core, imgcodecs};
+use opencv::{core::{self, MatTraitConst}, imgcodecs};
 use tokio::{sync::Semaphore, task::JoinSet};
 
 pub async fn split_dataset(dataset_path: &String, train_ratio: &f32) {
@@ -121,6 +121,9 @@ pub async fn calc_mean_std(dataset_path: &String) {
     let sem = Arc::new(Semaphore::new(10));
     for entry in entries {
         let entry = entry.unwrap();
+        if !entry.path().is_file() {
+            continue;
+        }
         let mean_map = Arc::clone(&mean_map);
         let std_map = Arc::clone(&std_map);
         let sem = Arc::clone(&sem);
@@ -132,6 +135,10 @@ pub async fn calc_mean_std(dataset_path: &String) {
 
             let mut mean = core::Vector::<f64>::new();
             let mut stddev = core::Vector::<f64>::new();
+            if image.empty() {
+                log::error!("Image {} is empty", entry.path().display());
+                return;
+            }
             core::mean_std_dev(&image, &mut mean, &mut stddev, &core::no_array()).unwrap();
 
             let mut mean_map = mean_map.lock().unwrap();
