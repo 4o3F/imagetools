@@ -54,11 +54,14 @@ pub async fn split_images(dataset_path: &String, target_height: &u32, target_wid
             // 读取图片
             let img = imgcodecs::imread(&entry_path, imgcodecs::IMREAD_UNCHANGED)
                 .expect_or_log(format!("Failed to read image: {}", entry_path).as_str());
-
+            if img.empty() {
+                tracing::error!("Failed to read image: {} image is empty", entry_path);
+                return ();
+            }
             let size = img.size().expect_or_log("Failed to get image size");
+            tracing::trace!("Image {} size {:?}", file_name, size);
+
             let (width, height) = (size.width as u32, size.height as u32);
-            
-            tracing::trace!("Image {} size {}x{}", file_name, width, height);
 
             let vertical_count = height / target_height;
             let horizontal_count = width / target_width;
