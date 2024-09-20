@@ -4,10 +4,12 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use opencv::{core::{self, MatTraitConst}, imgcodecs};
+use opencv::{
+    core::{self, MatTraitConst},
+    imgcodecs,
+};
 use tokio::{sync::Semaphore, task::JoinSet};
-use tracing_unwrap::OptionExt;
-
+use tracing_unwrap::{OptionExt, ResultExt};
 
 pub async fn split_dataset(dataset_path: &String, train_ratio: &f32) {
     let entries = fs::read_dir(dataset_path).unwrap();
@@ -116,24 +118,41 @@ pub async fn count_classes(dataset_path: &String) {
 }
 
 pub async fn calc_mean_std(dataset_path: &String) {
-    let entries = fs::read_dir(dataset_path).unwrap();
+    let entries = fs::read_dir(dataset_path).expect_or_log("Failed to read directory");
     let mut threads = JoinSet::new();
+
     let mean_map = Arc::new(Mutex::new(HashMap::<usize, Vec<f64>>::new()));
     let std_map = Arc::new(Mutex::new(HashMap::<usize, Vec<f64>>::new()));
-    let sem = Arc::new(Semaphore::new(10));
+
+    let min_value = Arc::new(Mutex::new(f64::MAX));
+    let max_value = Arc::new(Mutex::new(f64::MIN));
+
+    let sem = Arc::new(Semaphore::new(1));
     for entry in entries {
-        let entry = entry.unwrap();
+        let entry = entry.expect_or_log("Failed to iterate entries");
         if !entry.path().is_file() {
             continue;
         }
         let mean_map = Arc::clone(&mean_map);
         let std_map = Arc::clone(&std_map);
+
+        let global_min_value = Arc::clone(&min_value);
+        let global_max_value = Arc::clone(&max_value);
+
         let sem = Arc::clone(&sem);
         threads.spawn(async move {
-            let _permit = sem.acquire().await.unwrap();
-            let image =
-                imgcodecs::imread(entry.path().to_str().unwrap(), imgcodecs::IMREAD_UNCHANGED)
-                    .unwrap();
+            let _permit = sem
+                .acquire()
+                .await
+                .expect_or_log("Failed to acquire semaphore");
+            let image = imgcodecs::imread(
+                entry
+                    .path()
+                    .to_str()
+                    .expect_or_log("Failed to convert path to string"),
+                imgcodecs::IMREAD_UNCHANGED,
+            )
+            .expect_or_log("Failed to read image");
 
             let mut mean = core::Vector::<f64>::new();
             let mut stddev = core::Vector::<f64>::new();
@@ -141,21 +160,47 @@ pub async fn calc_mean_std(dataset_path: &String) {
                 tracing::error!("Image {} is empty", entry.path().display());
                 return;
             }
-            core::mean_std_dev(&image, &mut mean, &mut stddev, &core::no_array()).unwrap();
+            core::mean_std_dev(&image, &mut mean, &mut stddev, &core::no_array())
+                .expect_or_log("Failed to calculate mean & std dev of mat");
+            let mut min_value = 0.0;
+            let mut max_value = 0.0;
+            core::min_max_loc(
+                &image,
+                Some(&mut min_value),
+                Some(&mut max_value),
+                None,
+                None,
+                &core::no_array(),
+            )
+            .expect_or_log("Failed to find min & max value of mat");
 
-            let mut mean_map = mean_map.lock().unwrap();
-            let mut std_map = std_map.lock().unwrap();
+            let mut mean_map = mean_map.lock().expect_or_log("Failed to lock mean map");
+            let mut std_map = std_map.lock().expect_or_log("Failed to lock std map");
             for i in 1..=mean.len() {
                 if !mean_map.contains_key(&i) {
                     mean_map.insert(i, Vec::<f64>::new());
                     std_map.insert(i, Vec::<f64>::new());
                 }
-                mean_map.get_mut(&i).unwrap().push(mean.get(i - 1).unwrap());
-                std_map
+                mean_map
                     .get_mut(&i)
                     .unwrap()
-                    .push(stddev.get(i - 1).unwrap());
+                    .push(mean.get(i - 1).expect_or_log("Failed to get mean value"));
+                std_map.get_mut(&i).unwrap().push(
+                    stddev
+                        .get(i - 1)
+                        .expect_or_log("Failed to get stddev value"),
+                );
             }
+
+            let mut global_min_value = global_min_value
+                .lock()
+                .expect_or_log("Failed to lock min value");
+            let mut global_max_value = global_max_value
+                .lock()
+                .expect_or_log("Failed to lock max value");
+
+            *global_min_value = f64::min(*global_min_value, min_value);
+            *global_max_value = f64::max(*global_max_value, max_value);
 
             tracing::info!("Image {} done", entry.path().display());
         });
@@ -172,24 +217,33 @@ pub async fn calc_mean_std(dataset_path: &String) {
         }
     }
 
-    let mean_map = mean_map.lock().unwrap();
-    let std_map = std_map.lock().unwrap();
+    let mean_map = mean_map.lock().expect_or_log("Failed to lock mean map");
+    let std_map = std_map.lock().expect_or_log("Failed to lock std map");
 
     assert_eq!(mean_map.len(), std_map.len());
 
     let mut mean_vec: Vec<f64> = vec![0.0; mean_map.len()];
     for (i, mean) in mean_map.iter() {
         let mean = mean.iter().sum::<f64>() / mean.len() as f64;
-        *mean_vec.get_mut(*i - 1).unwrap() = mean;
+        *mean_vec
+            .get_mut(*i - 1)
+            .expect_or_log("Failed to get mean value") = mean;
     }
 
     let mut std_vec: Vec<f64> = vec![0.0; std_map.len()];
     for (i, std) in std_map.iter() {
         let std = std.iter().sum::<f64>() / std.len() as f64;
-        *std_vec.get_mut(*i - 1).unwrap() = std;
+        *std_vec
+            .get_mut(*i - 1)
+            .expect_or_log("Failed to get std value") = std;
     }
+
+    let min_value = min_value.lock().expect_or_log("Failed to lock min value");
+    let max_value = max_value.lock().expect_or_log("Failed to lock max value");
 
     tracing::info!("Mean: {:?}", mean_vec);
     tracing::info!("Std: {:?}", std_vec);
+    tracing::info!("Min: {:?}", *min_value);
+    tracing::info!("Max: {:?}", *max_value);
     tracing::info!("Dataset calculated");
 }

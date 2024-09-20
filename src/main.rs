@@ -5,6 +5,7 @@ use tracing_unwrap::{OptionExt, ResultExt};
 
 mod common;
 mod yolo;
+// mod geo;
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]

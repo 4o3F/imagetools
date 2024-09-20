@@ -18,6 +18,7 @@ opencv = { version = "0.89.0", default-features = false, features = [
     "imgproc",
     "imgcodecs",
 ] }
+# gdal = "0.17.0"
 itertools = "0.12.1"
 clap = { version = "4.5.9", features = ["derive"] }
 tracing-subscriber = "0.3.18"
