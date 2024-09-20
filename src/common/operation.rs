@@ -93,11 +93,9 @@ pub async fn strip_image_edge(
         EdgePosition::Bottom => {
             core::Mat::roi(&img, core::Rect::new(0, 0, width, height - *length)).unwrap()
         }
-        EdgePosition::Left => core::Mat::roi(
-            &img,
-            core::Rect::new(*length, 0, width - *length, height),
-        )
-        .unwrap(),
+        EdgePosition::Left => {
+            core::Mat::roi(&img, core::Rect::new(*length, 0, width - *length, height)).unwrap()
+        }
         EdgePosition::Right => {
             core::Mat::roi(&img, core::Rect::new(0, 0, width - *length, height)).unwrap()
         }
@@ -106,4 +104,36 @@ pub async fn strip_image_edge(
     imgcodecs::imwrite(save_path, &cropped_img, &core::Vector::new()).unwrap();
 
     tracing::info!("Image {} done", save_path);
+}
+
+pub fn crop_rectangle_region(source_path: &String, target_path: &String, corners: &String) {
+    let cords: Vec<(i32, i32)> = corners
+        .split(';')
+        .map(|s| {
+            s.split(',')
+                .map(|s| s.parse::<i32>().unwrap())
+                .collect::<Vec<i32>>()
+        })
+        .map(|c| {
+            if c.len() != 2 {
+                tracing::error!("Invalid rectangle coordinates");
+            }
+            (c[0], c[1])
+        })
+        .collect();
+    if cords.len() != 2 {
+        tracing::error!("Invalid rectangle coordinates");
+        return ();
+    }
+    tracing::info!("Rectangle coordinates: {:?}", cords);
+    let img = imgcodecs::imread(source_path, imgcodecs::IMREAD_UNCHANGED).unwrap();
+    tracing::info!("Loaded image: {}", source_path);
+
+    let cropped_img = core::Mat::roi(
+        &img,
+        core::Rect::new(cords[0].0, cords[0].1, cords[1].0 - cords[0].0, cords[1].1 - cords[0].1),
+    )
+    .unwrap();
+    imgcodecs::imwrite(&target_path, &cropped_img, &core::Vector::new()).unwrap();
+    tracing::info!("Image {} done", source_path);
 }

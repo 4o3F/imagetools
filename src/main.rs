@@ -29,6 +29,20 @@ enum Commands {
 }
 #[derive(Subcommand)]
 enum CommonCommands {
+    /// Crop a rectangle region of the image
+    CropRectangle {
+        #[arg(short, long, help = "The path for the original image")]
+        image_path: String,
+        #[arg(short, long, help = "The path for the cropped new image")]
+        save_path: String,
+        #[arg(
+            short,
+            long,
+            help = "The corner cords of the rectangle in the format x1,y1;x2,y2 left right corner is 0,0"
+        )]
+        rectangle: String,
+    },
+
     // TODO: Add arg for image extension selection
     /// Map one RGB color to another in a given PNG image file
     MapColor {
@@ -223,6 +237,13 @@ enum YoloCommands {
     SplitDataset {
         #[arg(short, long, help = "The path for the folder containing TXT labels")]
         dataset_path: String,
+
+        #[arg(
+            short,
+            long,
+            help = "The ratio of train set, should be between 0 and 1"
+        )]
+        train_ratio: f32,
     },
 
     /// Count the object number of each type in the dataset
@@ -266,6 +287,13 @@ async fn main() {
 
     match &cli.command {
         Some(Commands::Common { command }) => match command {
+            CommonCommands::CropRectangle {
+                image_path,
+                save_path,
+                rectangle,
+            } => {
+                common::operation::crop_rectangle_region(image_path, save_path, rectangle);
+            }
             CommonCommands::MapColor {
                 original_color,
                 new_color,
@@ -379,8 +407,11 @@ async fn main() {
             }
         },
         Some(Commands::Yolo { command }) => match command {
-            YoloCommands::SplitDataset { dataset_path } => {
-                yolo::dataset::split_dataset(dataset_path).await;
+            YoloCommands::SplitDataset {
+                dataset_path,
+                train_ratio,
+            } => {
+                yolo::dataset::split_dataset(dataset_path, train_ratio).await;
             }
             YoloCommands::CountTypes { dataset_path } => {
                 yolo::dataset::count_types(dataset_path).await;

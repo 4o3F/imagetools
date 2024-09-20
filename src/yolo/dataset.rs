@@ -8,7 +8,7 @@ use itertools::Itertools;
 use tokio::{sync::Semaphore, task::JoinSet};
 use tracing_unwrap::OptionExt;
 
-pub async fn split_dataset(dataset_path: &String) {
+pub async fn split_dataset(dataset_path: &String, train_ratio: &f32) {
     let entries = fs::read_dir(dataset_path).unwrap();
     let mut threads = JoinSet::new();
     let sem = Arc::new(Semaphore::new(10));
@@ -47,7 +47,7 @@ pub async fn split_dataset(dataset_path: &String) {
     let mut data = result.lock().unwrap();
     use rand::seq::SliceRandom;
     data.shuffle(&mut rand::thread_rng());
-    let train_count = (data.len() as f32 * 0.8) as i32;
+    let train_count = (data.len() as f32 * train_ratio) as i32;
     let train_data = data[0..train_count as usize].to_vec();
     let valid_data = data[train_count as usize..].to_vec();
 

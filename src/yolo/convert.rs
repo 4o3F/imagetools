@@ -3,6 +3,7 @@ use std::{collections::HashMap, fs, sync::Arc};
 use image::Rgb;
 use opencv::{core::MatTrait, imgproc};
 use tokio::{fs::File, io::AsyncWriteExt, sync::Semaphore, task::JoinSet};
+use tracing_unwrap::ResultExt;
 
 pub async fn rgb2yolo(dataset_path: &String, rgb_list: &str) {
     let mut color_class_map = HashMap::<Rgb<u8>, u32>::new();
@@ -46,6 +47,9 @@ pub async fn rgb2yolo(dataset_path: &String, rgb_list: &str) {
         }
         color_class_map.insert(Rgb([rgb_vec[0], rgb_vec[1], rgb_vec[2]]), class_id as u32);
     }
+
+    fs::create_dir_all(format!("{}/../outputs/", dataset_path))
+        .expect_or_log("Create output dir error");
 
     let mut threads = JoinSet::new();
     let sem = Arc::new(Semaphore::new(10));
