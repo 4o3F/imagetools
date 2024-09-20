@@ -139,11 +139,11 @@ enum CommonCommands {
         #[arg(short, long, help = "The path for the folder containing images")]
         dataset_path: String,
 
-        #[arg(short, long, help = "Target height")]
-        target_height: u32,
+        #[arg(long, help = "Target height")]
+        height: u32,
 
-        #[arg(short, long, help = "Target width")]
-        target_width: u32,
+        #[arg(long, help = "Target width")]
+        width: u32,
 
         #[arg(
             short,
@@ -184,7 +184,7 @@ enum CommonCommands {
         train_ratio: f32,
     },
 
-    /// Count class for 8 bit PNG image
+    /// Count class for 8 bit PNG image & Calc class balance weight
     CountClasses {
         #[arg(short, long, help = "The path for the folder containing images")]
         dataset_path: String,
@@ -328,12 +328,11 @@ async fn main() {
             }
             CommonCommands::ResizeImages {
                 dataset_path,
-                target_height,
-                target_width,
+                height,
+                width,
                 filter,
             } => {
-                common::operation::resize_images(dataset_path, target_height, target_width, filter)
-                    .await;
+                common::operation::resize_images(dataset_path, height, width, filter).await;
             }
             CommonCommands::Rgb2Rle {
                 dataset_path,
