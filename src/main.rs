@@ -93,6 +93,20 @@ enum CommonCommands {
         save_path: String,
     },
 
+    MapBackgroundColor {
+        #[arg(short, long, help = "In R1,G1,B1;R2,G2,B2 format")]
+        valid_colors: String,
+
+        #[arg(short, long, help = "In R,G,B format")]
+        new_color: String,
+
+        #[arg(short, long, help = "The path for the original image")]
+        image_path: String,
+
+        #[arg(short, long, help = "The path for the mapped new image")]
+        save_path: String,
+    },
+
     /// Split large images to small pieces for augmentation purposes
     SplitImages {
         #[arg(short, long, help = "The path for the folder containing images")]
@@ -261,6 +275,16 @@ enum CommonCommands {
         #[arg(short, long, help = "The path for the folder containing images")]
         dataset_path: String,
     },
+
+    /// Calc the IoU of two images
+    #[command(name = "calc-iou")]
+    CalcIoU {
+        #[arg(short, long, help = "The path for the target image")]
+        target_image: String,
+
+        #[arg(short, long, help = "The path for the ground truth image")]
+        gt_image: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -341,6 +365,19 @@ async fn main() {
                 save_path,
             } => {
                 common::remap::remap_color(original_color, new_color, image_path, save_path);
+            }
+            CommonCommands::MapBackgroundColor {
+                valid_colors,
+                new_color,
+                image_path,
+                save_path,
+            } => {
+                common::remap::remap_background_color(
+                    valid_colors,
+                    new_color,
+                    image_path,
+                    save_path,
+                );
             }
             CommonCommands::MapColorDir {
                 original_color,
@@ -455,6 +492,12 @@ async fn main() {
             }
             CommonCommands::CalcMeanStd { dataset_path } => {
                 common::dataset::calc_mean_std(dataset_path).await;
+            }
+            CommonCommands::CalcIoU {
+                target_image,
+                gt_image,
+            } => {
+                common::metric::calc_iou(target_image, gt_image);
             }
         },
         Some(Commands::Yolo { command }) => match command {

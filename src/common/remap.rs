@@ -1,4 +1,8 @@
 use image::{GrayImage, Luma, Rgb, RgbImage};
+use opencv::{
+    core::{MatTrait, MatTraitConst, Vec3b, Vector, CV_8U},
+    imgcodecs::{self, imread, imwrite},
+};
 use std::{
     collections::HashMap,
     fs,
@@ -6,6 +10,7 @@ use std::{
     sync::{Arc, RwLock},
 };
 use tokio::{sync::Semaphore, task::JoinSet};
+use tracing_unwrap::ResultExt;
 
 pub fn remap_color(original_color: &str, new_color: &str, image_path: &String, save_path: &String) {
     let mut original_color_vec: Vec<u8> = vec![];
@@ -103,6 +108,64 @@ pub async fn remap_color_dir(
     while threads.join_next().await.is_some() {}
 
     tracing::info!("All color remap done!");
+}
+
+pub fn remap_background_color(
+    valid_colors: &String,
+    new_color: &str,
+    image_path: &String,
+    save_path: &String,
+) {
+    let mut original_color_vec: Vec<Vec<u8>> = vec![];
+    for valid_color in valid_colors.split(";") {
+        let mut color_vec = vec![];
+        for splited in valid_color.split(',') {
+            let splited = splited
+                .parse::<u8>()
+                .expect_or_log("Malformed original color RGB, please use R,G,B format");
+            color_vec.push(splited);
+        }
+
+        original_color_vec.push(color_vec);
+    }
+
+    let mut new_color_vec: Vec<u8> = vec![];
+    for splited in new_color.split(',') {
+        let splited = splited
+            .parse::<u8>()
+            .expect_or_log("Malformed new color RGB, please use R,G,B format");
+        new_color_vec.push(splited);
+    }
+
+    if original_color_vec.iter().any(|x| x.len() != 3) || new_color_vec.len() != 3 {
+        tracing::error!("Malformed color RGB, please use R,G,B format");
+        return;
+    }
+
+    let new_color_rgb = [new_color_vec[0], new_color_vec[1], new_color_vec[2]];
+
+    let mut img = imread(&image_path, imgcodecs::IMREAD_COLOR).expect_or_log("Open image error");
+    tracing::info!("Image loaded");
+    if img.depth() != CV_8U {
+        tracing::error!("Image depth is not 8U, not supported");
+        return;
+    }
+    let cols = img.cols();
+    let rows = img.rows();
+
+    for y in 0..rows {
+        for x in 0..cols {
+            let pixel = img.at_2d_mut::<Vec3b>(y, x).unwrap();
+            if !original_color_vec.contains(&vec![pixel.0[0], pixel.0[1], pixel.0[2]]) {
+                pixel.0 = new_color_rgb;
+            }
+        }
+        tracing::trace!("Y {} done", y);
+    }
+
+    imwrite(save_path, &img, &Vector::new()).expect_or_log("Save image error");
+
+    tracing::info!("{} background color remap done!", image_path);
 }
 
 pub async fn class2rgb(dataset_path: &String, rgb_list: &str) {
