@@ -18,8 +18,8 @@ pub fn calc_iou(target_img: &String, gt_img: &String) {
         return;
     }
 
-    let mut intersection: HashMap<(u8, u8, u8), usize> = HashMap::new();
-    let mut union: HashMap<(u8, u8, u8), usize> = HashMap::new();
+    let mut intersection: HashMap<(u8, u8, u8), i64> = HashMap::new();
+    let mut union: HashMap<(u8, u8, u8), i64> = HashMap::new();
 
     let rows = gt_img.rows();
     let cols = gt_img.cols();
@@ -48,6 +48,7 @@ pub fn calc_iou(target_img: &String, gt_img: &String) {
                 *intersection.entry(color1).or_insert(0) += 1;
             }
         }
+        tracing::trace!("Y {} done", i);
     }
 
     let mut iou = HashMap::new();
