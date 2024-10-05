@@ -498,7 +498,7 @@ pub async fn split_images_with_filter(
                 // Crop horizontally from left
                 for x_index in 0..x_count {
                     for y_index in 0..y_count {
-                        let label_id = format!("{}_lt2rb_{}_{}", label_id, x_index, y_index);
+                        let label_id = format!("{}_LTR_x{}_y{}", label_id, x_index, y_index);
                         let cropped = core::Mat::roi(
                             &img,
                             core::Rect::new(
@@ -535,7 +535,7 @@ pub async fn split_images_with_filter(
                 // Crop horizontally from right
                 for x_index in 0..x_count {
                     for y_index in 0..y_count {
-                        let label_id = format!("{}_rb2lt_{}_{}", label_id, x_index, y_index);
+                        let label_id = format!("{}_LTR_x{}_y{}", label_id, x_index, y_index);
                         let cropped = core::Mat::roi(
                             &img,
                             core::Rect::new(
@@ -626,7 +626,7 @@ pub async fn split_images_with_filter(
             // Crop horizontally from left
             for x_index in 0..x_count {
                 for y_index in 0..y_count {
-                    let img_id = format!("{}_lt2rb_{}_{}", img_id, x_index, y_index);
+                    let img_id = format!("{}_RTL_x{}_y{}", img_id, x_index, y_index);
                     if !valid_id.read().unwrap().contains(&img_id) {
                         continue;
                     }
@@ -661,7 +661,7 @@ pub async fn split_images_with_filter(
             // Crop horizontally from right
             for x_index in 0..x_count {
                 for y_index in 0..y_count {
-                    let img_id = format!("{}_rb2lt_{}_{}", img_id, x_index, y_index);
+                    let img_id = format!("{}_RTL_x{}_y{}", img_id, x_index, y_index);
                     if !valid_id.read().unwrap().contains(&img_id) {
                         continue;
                     }
@@ -699,4 +699,101 @@ pub async fn split_images_with_filter(
     }
 
     while threads.join_next().await.is_some() {}
+}
+
+pub async fn stich_images(splited_images: &String, target_height: &i32, target_width: &i32) {
+    let entries = fs::read_dir(splited_images).unwrap();
+    let mut size: Option<(i32, i32)> = None;
+
+    let mut result_mat = Mat::new_rows_cols_with_default(
+        *target_height,
+        *target_width,
+        core::CV_8UC3,
+        opencv::core::Scalar::all(0.),
+    )
+    .unwrap();
+    let re = regex::Regex::new(r"^(.*)_(LTR|RTL)_x(\d*)_y(\d*)\.(jpg|tif)")
+        .expect_or_log("Failed to compile regex");
+
+    for entry in entries {
+        let entry = entry.unwrap();
+        let file_name = entry.file_name();
+        let file_name = file_name.to_str().unwrap();
+
+        // Image name, direction, x, y
+        let mut info = Vec::new();
+        while let Some(m) = re.captures(file_name) {
+            info.push(m.get(1).unwrap().as_str());
+            info.push(m.get(2).unwrap().as_str());
+            info.push(m.get(3).unwrap().as_str());
+            info.push(m.get(4).unwrap().as_str());
+            break;
+        }
+
+        // tracing::trace!("Captures {:?}", re.captures(file_name));
+
+        if info.len() != 4 {
+            tracing::error!("Failed to parse image name {}", file_name);
+            return;
+        }
+
+        let img =
+            imgcodecs::imread(entry.path().to_str().unwrap(), imgcodecs::IMREAD_UNCHANGED).unwrap();
+
+        let current_img_size = img.size().unwrap();
+        if size.is_none() {
+            size = Some((current_img_size.width, current_img_size.height));
+        } else {
+            if current_img_size.width != size.unwrap().0
+                || current_img_size.height != size.unwrap().1
+            {
+                tracing::error!(
+                    "Image {} size is not consistent",
+                    entry.file_name().to_str().unwrap()
+                );
+                return;
+            }
+        }
+
+        if info[1] == "RTL" {
+            let x = target_width - ((info[2].parse::<i32>().unwrap() + 1) * size.unwrap().0);
+            let y = target_height - ((info[3].parse::<i32>().unwrap() + 1) * size.unwrap().1);
+            tracing::trace!("RTL x {} y {}", x, y);
+            let mut roi = Mat::roi_mut(
+                &mut result_mat,
+                core::Rect::new(
+                    x,
+                    y,
+                    size.unwrap().0,
+                    size.unwrap().1,
+                ),
+            )
+            .expect_or_log("Failed to create roi");
+            img.copy_to(&mut roi).expect_or_log("Failed to copy image");
+        } else if info[1] == "LTR" {
+            let mut roi = Mat::roi_mut(
+                &mut result_mat,
+                core::Rect::new(
+                    info[2].parse::<i32>().unwrap() * size.unwrap().0,
+                    info[3].parse::<i32>().unwrap() * size.unwrap().1,
+                    size.unwrap().0,
+                    size.unwrap().1,
+                ),
+            )
+            .expect_or_log("Failed to create roi");
+            img.copy_to(&mut roi).expect_or_log("Failed to copy image");
+        } else {
+            tracing::error!("Failed to parse image direction {}", info[1]);
+            return;
+        }
+
+        tracing::info!("Image {} processed", entry.file_name().to_str().unwrap());
+    }
+
+    imgcodecs::imwrite(
+        format!("{}\\stiched.png", splited_images).as_str(),
+        &result_mat,
+        &core::Vector::new(),
+    )
+    .expect_or_log("Failed to save image");
 }

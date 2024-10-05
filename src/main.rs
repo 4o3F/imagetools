@@ -240,6 +240,22 @@ enum CommonCommands {
         length: i32,
     },
 
+    /// Stich the splited images back together
+    StichImages {
+        #[arg(
+            short,
+            long,
+            help = "The path for the folder containing splited images"
+        )]
+        image_output_path: String,
+
+        #[arg(long, help = "The stiched image height")]
+        target_height: i32,
+
+        #[arg(long, help = "The stiched image width")]
+        target_width: i32,
+    },
+
     /// Calc the mean and std of a dataset for normalization
     CalcMeanStd {
         #[arg(short, long, help = "The path for the folder containing images")]
@@ -363,7 +379,7 @@ async fn main() {
                 target_width,
                 rgb_list,
                 valid_rgb_mode,
-                skip_label_process
+                skip_label_process,
             } => {
                 common::augment::split_images_with_filter(
                     image_path,
@@ -372,9 +388,16 @@ async fn main() {
                     target_width,
                     rgb_list,
                     *valid_rgb_mode,
-                    *skip_label_process
+                    *skip_label_process,
                 )
                 .await;
+            }
+            CommonCommands::StichImages {
+                image_output_path,
+                target_height,
+                target_width,
+            } => {
+                common::augment::stich_images(image_output_path, target_height, target_width).await;
             }
             CommonCommands::Class2RGB {
                 dataset_path,
