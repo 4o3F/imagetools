@@ -362,6 +362,7 @@ pub async fn split_images_with_filter(
     target_width: &u32,
     rgb_list_str: &str,
     valid_rgb_mode: bool,
+    skip_label_processing: bool,
 ) {
     let rgb_list: Arc<RwLock<Vec<core::Vec3b>>> = Arc::new(RwLock::new(Vec::new()));
     for rgb in rgb_list_str.split(";") {
@@ -456,122 +457,137 @@ pub async fn split_images_with_filter(
         }
     }
 
-    let mut label_extension = None;
-    for entry in label_entries {
-        if !entry.is_file() {
-            continue;
+    // Label Processing
+    if !skip_label_processing {
+        let mut label_extension = None;
+        for entry in label_entries {
+            if !entry.is_file() {
+                continue;
+            }
+
+            if label_extension.is_none() {
+                let extension = entry
+                    .extension()
+                    .unwrap()
+                    .to_os_string()
+                    .into_string()
+                    .unwrap();
+                label_extension = Some(extension);
+            }
+
+            let permit = Arc::clone(&sem);
+            let valid_id = Arc::clone(&valid_id);
+            let target_width = *target_width;
+            let target_height = *target_height;
+            let rgb_list = Arc::clone(&rgb_list);
+            let label_extension = label_extension.clone();
+
+            let label_output_path = label_output_path.clone();
+            threads.spawn(async move {
+                let _ = permit.acquire().await.unwrap();
+                let label_id = entry.file_stem().unwrap().to_str().unwrap().to_string();
+                let img = imgcodecs::imread(entry.to_str().unwrap(), imgcodecs::IMREAD_UNCHANGED)
+                    .unwrap();
+
+                let size = img.size().unwrap();
+                let (width, height) = (size.width, size.height);
+                let y_count = height / target_height as i32;
+                let x_count = width / target_width as i32;
+                // let mut labels_map = HashMap::<String, Mat>::new();
+
+                // Crop horizontally from left
+                for x_index in 0..x_count {
+                    for y_index in 0..y_count {
+                        let label_id = format!("{}_lt2rb_{}_{}", label_id, x_index, y_index);
+                        let cropped = core::Mat::roi(
+                            &img,
+                            core::Rect::new(
+                                x_index * target_width as i32,
+                                y_index * target_height as i32,
+                                target_width as i32,
+                                target_height as i32,
+                            ),
+                        )
+                        .unwrap()
+                        .clone_pointee();
+
+                        let rgb_list = rgb_list.read().unwrap();
+                        if check_valid_pixel_count(&cropped, &rgb_list, valid_rgb_mode) {
+                            imgcodecs::imwrite(
+                                &format!(
+                                    "{}\\{}.{}",
+                                    label_output_path,
+                                    label_id,
+                                    label_extension.as_ref().unwrap()
+                                ),
+                                &cropped,
+                                &core::Vector::new(),
+                            )
+                            .unwrap();
+                            valid_id.write().unwrap().push(label_id.clone());
+                        }
+                        tracing::info!("Label {} processed", label_id);
+                    }
+                }
+
+                tracing::info!("Label {} LTR iteration done", label_id);
+
+                // Crop horizontally from right
+                for x_index in 0..x_count {
+                    for y_index in 0..y_count {
+                        let label_id = format!("{}_rb2lt_{}_{}", label_id, x_index, y_index);
+                        let cropped = core::Mat::roi(
+                            &img,
+                            core::Rect::new(
+                                width - (x_index + 1) * target_width as i32,
+                                height - (y_index + 1) * target_height as i32,
+                                target_width as i32,
+                                target_height as i32,
+                            ),
+                        )
+                        .unwrap()
+                        .clone_pointee();
+                        let rgb_list = rgb_list.read().unwrap();
+                        if check_valid_pixel_count(&cropped, &rgb_list, valid_rgb_mode) {
+                            imgcodecs::imwrite(
+                                &format!(
+                                    "{}\\{}.{}",
+                                    label_output_path,
+                                    label_id,
+                                    label_extension.as_ref().unwrap()
+                                ),
+                                &cropped,
+                                &core::Vector::new(),
+                            )
+                            .unwrap();
+                            valid_id.write().unwrap().push(label_id.clone());
+                        }
+                        tracing::info!("Label {} processed", label_id);
+                    }
+                }
+
+                tracing::info!("Label {} RTL iteration done", label_id);
+
+                tracing::info!("Label {} process done", label_id);
+            });
         }
 
-        if label_extension.is_none() {
-            let extension = entry
-                .extension()
+        while threads.join_next().await.is_some() {}
+    } else {
+        tracing::info!("Skipping label processing, reading valid labels");
+        for path in fs::read_dir(label_output_path).unwrap() {
+            let path = path.unwrap().path();
+            valid_id
+                .write()
                 .unwrap()
-                .to_os_string()
-                .into_string()
-                .unwrap();
-            label_extension = Some(extension);
+                .push(path.file_stem().unwrap().to_str().unwrap().to_string());
         }
-
-        let permit = Arc::clone(&sem);
-        let valid_id = Arc::clone(&valid_id);
-        let target_width = *target_width;
-        let target_height = *target_height;
-        let rgb_list = Arc::clone(&rgb_list);
-        let label_extension = label_extension.clone();
-
-        let label_output_path = label_output_path.clone();
-        threads.spawn(async move {
-            let _ = permit.acquire().await.unwrap();
-            let label_id = entry.file_stem().unwrap().to_str().unwrap().to_string();
-            let img =
-                imgcodecs::imread(entry.to_str().unwrap(), imgcodecs::IMREAD_UNCHANGED).unwrap();
-
-            let size = img.size().unwrap();
-            let (width, height) = (size.width, size.height);
-            let y_count = height / target_height as i32;
-            let x_count = width / target_width as i32;
-            // let mut labels_map = HashMap::<String, Mat>::new();
-
-            // Crop horizontally from left
-            for x_index in 0..x_count {
-                for y_index in 0..y_count {
-                    let label_id = format!("{}_lt2rb_{}_{}", label_id, x_index, y_index);
-                    let cropped = core::Mat::roi(
-                        &img,
-                        core::Rect::new(
-                            x_index * target_width as i32,
-                            y_index * target_height as i32,
-                            target_width as i32,
-                            target_height as i32,
-                        ),
-                    )
-                    .unwrap()
-                    .clone_pointee();
-
-                    let rgb_list = rgb_list.read().unwrap();
-                    if check_valid_pixel_count(&cropped, &rgb_list, valid_rgb_mode) {
-                        imgcodecs::imwrite(
-                            &format!(
-                                "{}\\{}.{}",
-                                label_output_path,
-                                label_id,
-                                label_extension.as_ref().unwrap()
-                            ),
-                            &cropped,
-                            &core::Vector::new(),
-                        )
-                        .unwrap();
-                        valid_id.write().unwrap().push(label_id.clone());
-                    }
-                    tracing::info!("Label {} processed", label_id);
-                }
-            }
-
-            tracing::info!("Label {} LTR iteration done", label_id);
-
-            // Crop horizontally from right
-            for x_index in 0..x_count {
-                for y_index in 0..y_count {
-                    let label_id = format!("{}_rb2lt_{}_{}", label_id, x_index, y_index);
-                    let cropped = core::Mat::roi(
-                        &img,
-                        core::Rect::new(
-                            width - (x_index + 1) * target_width as i32,
-                            height - (y_index + 1) * target_height as i32,
-                            target_width as i32,
-                            target_height as i32,
-                        ),
-                    )
-                    .unwrap()
-                    .clone_pointee();
-                    let rgb_list = rgb_list.read().unwrap();
-                    if check_valid_pixel_count(&cropped, &rgb_list, valid_rgb_mode) {
-                        imgcodecs::imwrite(
-                            &format!(
-                                "{}\\{}.{}",
-                                label_output_path,
-                                label_id,
-                                label_extension.as_ref().unwrap()
-                            ),
-                            &cropped,
-                            &core::Vector::new(),
-                        )
-                        .unwrap();
-                        valid_id.write().unwrap().push(label_id.clone());
-                    }
-                    tracing::info!("Label {} processed", label_id);
-                }
-            }
-
-            tracing::info!("Label {} RTL iteration done", label_id);
-
-            tracing::info!("Label {} process done", label_id);
-        });
+        tracing::info!("Labels read done");
     }
-
-    while threads.join_next().await.is_some() {}
-
-    tracing::info!("Labels process done");
+    tracing::info!(
+        "Labels process done, total {} valid labels",
+        valid_id.read().unwrap().len()
+    );
 
     let mut image_extension = None;
     for entry in image_entries {

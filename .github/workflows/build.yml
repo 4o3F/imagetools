@@ -43,9 +43,9 @@ jobs:
         with:
           path: |
             /opt/opencv
-          key: ${{ runner.os }}-opencv-${{ hashFiles('**/CMakeLists.txt') }}  # 使用 CMakeLists.txt 的哈希作为缓存键
+          key: ${{ runner.os }}-opencv-linux-${{ hashFiles('**/CMakeLists.txt') }}  # 使用 CMakeLists.txt 的哈希作为缓存键
           restore-keys: |
-            ${{ runner.os }}-opencv-
+            ${{ runner.os }}-opencv-linux
       # Pull opencv source, unzip, configure cmake, build, and install
       # Disable image formats like jpeg, png, tiff, as we use rust image crate instead.  See https://docs.opencv.org/4.x/db/d05/tutorial_config_reference.html
       # Inspired from https://github.com/twistedfall/opencv-rust/issues/364
@@ -72,7 +72,7 @@ jobs:
       # Build
       - name: Build
         run: |
-          export OPENCV_LINK_LIBS="opencv_videoio,opencv_imgcodecs,opencv_imgproc,opencv_core,libippiw,libittnotify,libippicv,libippicvmt,zlib,IlmImf,libjpeg-turbo,libopenjp2,libpng,libtiff,libwebp"
+          export OPENCV_LINK_LIBS="opencv_videoio,opencv_imgcodecs,opencv_imgproc,opencv_ximgproc,opencv_core"
           export OPENCV_LINK_PATHS=/opt/opencv/lib,/opt/opencv/lib/opencv4/3rdparty,/usr/lib/x86_64-linux-gnu
           export OPENCV_INCLUDE_PATHS=/opt/opencv/include,/opt/opencv/include/opencv4
           sudo ln -s /usr/lib/llvm-15/lib/libclang.so.1 /usr/lib/x86_64-linux-gnu/libclang.so
@@ -117,9 +117,9 @@ jobs:
         with:
           path: |
             D:/opt/opencv
-          key: ${{ runner.os }}-opencv-${{ hashFiles('**/CMakeLists.txt') }}  # 使用 CMakeLists.txt 的哈希作为缓存键
+          key: ${{ runner.os }}-opencv-windows-${{ hashFiles('**/CMakeLists.txt') }}  # 使用 CMakeLists.txt 的哈希作为缓存键
           restore-keys: |
-            ${{ runner.os }}-opencv-
+            ${{ runner.os }}-opencv-windows
       # Note: in order to set config profile to Release and use a prefix path, we have to separate cmake steps for building/installing.  CMake nuances...
       #    See https://stackoverflow.com/questions/19024259/how-to-change-the-build-type-to-release-mode-in-cmake, https://stackoverflow.com/questions/50028570/is-it-possible-to-build-cmake-projects-directly-using-msbuildtools, https://cmake.org/cmake/help/latest/variable/CMAKE_INSTALL_PREFIX.html
       # Pull opencv source, unzip, configure cmake, build, and install

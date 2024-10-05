@@ -138,8 +138,11 @@ enum CommonCommands {
         #[arg(long = "width", help = "Width for each split")]
         target_width: u32,
 
-        #[arg(short, help = "Use valid RGB filter mode")]
+        #[arg(short, help = "Use valid RGB filter mode", default_value = "true")]
         valid_rgb_mode: bool,
+
+        #[arg(short, help = "Skip label processing", default_value = "false")]
+        skip_label_process: bool,
     },
 
     /// Map 8 bit grayscale PNG class image to RGB image
@@ -359,7 +362,8 @@ async fn main() {
                 target_height,
                 target_width,
                 rgb_list,
-                valid_rgb_mode
+                valid_rgb_mode,
+                skip_label_process
             } => {
                 common::augment::split_images_with_filter(
                     image_path,
@@ -367,7 +371,8 @@ async fn main() {
                     target_height,
                     target_width,
                     rgb_list,
-                    *valid_rgb_mode
+                    *valid_rgb_mode,
+                    *skip_label_process
                 )
                 .await;
             }
