@@ -44,6 +44,16 @@ enum CommonCommands {
         rectangle: String,
     },
 
+    /// Normalize image to given range
+    Normalize {
+        #[arg(short, long, help = "The path for the original image")]
+        dataset_path: String,
+        #[arg(long, help = "The max value for normalization")]
+        max: f64,
+        #[arg(long, help = "The min value for normalization")]
+        min: f64,
+    },
+
     // TODO: Add arg for image extension selection
     /// Map one RGB color to another in a given PNG image file
     MapColor {
@@ -119,14 +129,17 @@ enum CommonCommands {
         #[arg(short, long, help = "The path for the folder containing labels")]
         label_path: String,
 
-        #[arg(short, long, help = "Valid RGB list, in R0,G0,B0;R1,G1,B1 format")]
-        valid_rgb_list: String,
+        #[arg(short, long, help = "RGB list, in R0,G0,B0;R1,G1,B1 format")]
+        rgb_list: String,
 
         #[arg(long = "height", help = "Height for each split")]
         target_height: u32,
 
         #[arg(long = "width", help = "Width for each split")]
         target_width: u32,
+
+        #[arg(short, help = "Use valid RGB filter mode")]
+        valid_rgb_mode: bool,
     },
 
     /// Map 8 bit grayscale PNG class image to RGB image
@@ -295,6 +308,13 @@ async fn main() {
             } => {
                 common::operation::crop_rectangle_region(image_path, save_path, rectangle);
             }
+            CommonCommands::Normalize {
+                dataset_path,
+                max,
+                min,
+            } => {
+                common::operation::normalize(dataset_path, max, min);
+            }
             CommonCommands::MapColor {
                 original_color,
                 new_color,
@@ -338,14 +358,16 @@ async fn main() {
                 label_path,
                 target_height,
                 target_width,
-                valid_rgb_list,
+                rgb_list,
+                valid_rgb_mode
             } => {
                 common::augment::split_images_with_filter(
                     image_path,
                     label_path,
                     target_height,
                     target_width,
-                    valid_rgb_list,
+                    rgb_list,
+                    *valid_rgb_mode
                 )
                 .await;
             }

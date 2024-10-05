@@ -1,7 +1,11 @@
 use image::imageops::FilterType;
-use opencv::{core, core::MatTraitConst, imgcodecs};
+use opencv::{
+    core::{self, MatTraitConst},
+    imgcodecs,
+};
 use std::{fs, io::Cursor, sync::Arc};
 use tokio::{fs::File, io::AsyncWriteExt, sync::Semaphore, task::JoinSet};
+use tracing_unwrap::{OptionExt, ResultExt};
 
 pub async fn resize_images(
     dataset_path: &String,
@@ -130,9 +134,70 @@ pub fn crop_rectangle_region(source_path: &String, target_path: &String, corners
 
     let cropped_img = core::Mat::roi(
         &img,
-        core::Rect::new(cords[0].0, cords[0].1, cords[1].0 - cords[0].0, cords[1].1 - cords[0].1),
+        core::Rect::new(
+            cords[0].0,
+            cords[0].1,
+            cords[1].0 - cords[0].0,
+            cords[1].1 - cords[0].1,
+        ),
     )
     .unwrap();
     imgcodecs::imwrite(&target_path, &cropped_img, &core::Vector::new()).unwrap();
     tracing::info!("Image {} done", source_path);
+}
+
+pub fn normalize(dataset_path: &String, target_max: &f64, target_min: &f64) {
+    let entries = fs::read_dir(dataset_path).expect_or_log("Failed to read directory");
+
+    fs::create_dir_all(format!("{}\\output\\", dataset_path))
+        .expect_or_log("Failed to create directory");
+
+    for entry in entries {
+        let entry = entry.unwrap();
+        if entry.path().is_dir() {
+            continue;
+        }
+        let img = imgcodecs::imread(
+            entry
+                .path()
+                .to_str()
+                .expect_or_log("Failed to get image path"),
+            imgcodecs::IMREAD_UNCHANGED,
+        )
+        .expect_or_log("Failed to read image");
+
+        let size = img.size().expect_or_log("Failed to get image size");
+        let mut dst = core::Mat::new_rows_cols_with_default(
+            size.height,
+            size.width,
+            img.typ(),
+            opencv::core::Scalar::all(0.),
+        )
+        .expect_or_log("Failed to create dst mat");
+        core::normalize(
+            &img,
+            &mut dst,
+            target_min.clone(),
+            target_max.clone(),
+            core::NORM_MINMAX,
+            -1,
+            &core::no_array(),
+        )
+        .expect_or_log("Failed to normalize");
+
+        let dst_path = format!(
+            "{}\\output\\{}",
+            dataset_path,
+            entry
+                .path()
+                .file_name()
+                .expect_or_log("Failed to get file name")
+                .to_str()
+                .expect_or_log("Failed to convert file name to string")
+                .to_owned()
+        );
+        imgcodecs::imwrite(&dst_path, &dst, &core::Vector::new())
+            .expect_or_log("Failed to write image");
+        tracing::info!("Image {} done", dst_path);
+    }
 }
