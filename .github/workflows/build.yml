@@ -36,7 +36,7 @@ jobs:
         run: |
           curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
           rustup target add x86_64-unknown-linux-musl
-          sudo apt-get update && sudo apt-get install musl-tools
+          sudo apt-get update && sudo apt-get install libstdc++-12-dev musl-tools
 
       # Install opencv
       #- name: Install opencv
@@ -79,8 +79,6 @@ jobs:
           export OPENCV_LINK_PATHS=/opt/opencv/lib,/opt/opencv/lib/opencv4/3rdparty,/usr/lib/x86_64-linux-gnu
           export OPENCV_INCLUDE_PATHS=/opt/opencv/include,/opt/opencv/include/opencv4
           sudo ln -s /usr/lib/llvm-15/lib/libclang.so.1 /usr/lib/x86_64-linux-gnu/libclang.so
-          ls -R /opt/opencv
-          ls -R /usr/lib
           cargo build --release --target x86_64-unknown-linux-musl
         
       # Upload artifact: https://github.com/actions/upload-artifact
