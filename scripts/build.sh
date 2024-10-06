@@ -89,7 +89,7 @@ if [[ "$os_family" == "Windows" ]]; then
 	export OPENCV_MSVC_CRT="static"
 	cargo build --release
 elif [[ "$os_family" == "Linux" ]]; then
-	cargo build --release --target x86_64-unknown-linux-gnu
+	cargo build --release
 else
 	cargo build --release
 fi
