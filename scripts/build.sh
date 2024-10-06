@@ -90,7 +90,7 @@ if [[ "$os_family" == "Windows" ]]; then
 	cargo build --release
 elif [[ "$os_family" == "Linux" ]]; then
 	apt-get update && apt-get install musl-tools
-	cargo build --release --target x86_64-unknown-linux-musl
+	cargo build --release
 else
 	cargo build --release
 fi
