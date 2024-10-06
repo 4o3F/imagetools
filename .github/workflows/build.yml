@@ -32,6 +32,7 @@ jobs:
           - os-image: ubuntu-22.04
             opencv-version: 4.10.0
             linkage: static
+            vcpkg-version: ""
           - os-image: windows-2022
             opencv-version: 4.10.0
             linkage: static
