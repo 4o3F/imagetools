@@ -55,6 +55,15 @@ jobs:
         run: scripts/build.sh
         shell: bash
    
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: imagetools
+          path: |
+            target/release/imagetools
+          retention-days: 14
+
+
   # windows-build:
   #   # The type of runner that the job will run on
   #   runs-on: windows-latest
