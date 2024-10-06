@@ -27,7 +27,7 @@ echo "set(VCPKG_BUILD_TYPE release)" >> triplets/x64-windows.cmake
 echo "set(VCPKG_BUILD_TYPE release)" >> triplets/x64-windows-static.cmake
 echo "set(VCPKG_BUILD_TYPE release)" >> triplets/x86-windows.cmake
 echo "set(VCPKG_BUILD_TYPE release)" >> triplets/community/x64-windows-static-md.cmake
-export VCPKG_DEFAULT_TRIPLET=x64-windows
+export VCPKG_DEFAULT_TRIPLET=x64-windows-static
 #./vcpkg install llvm  # takes very long time
 (
 	set +e
