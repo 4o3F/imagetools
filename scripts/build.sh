@@ -89,9 +89,7 @@ if [[ "$os_family" == "Windows" ]]; then
 	export OPENCV_MSVC_CRT="static"
 	cargo build --release
 elif [[ "$os_family" == "Linux" ]]; then
-	sudo apt-get update && sudo apt-get install musl-tools
-	rustup target add x86_64-unknown-linux-musl
-	cargo build --release
+	cargo build --release --target x86_64-unknown-linux-gnu
 else
 	cargo build --release
 fi
