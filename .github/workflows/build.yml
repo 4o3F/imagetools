@@ -62,7 +62,7 @@ jobs:
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: imagetools
+          name: imagetools-${{ matrix.os-image }}
           path: |
             target/release/imagetools
             target/release/imagetools.exe
