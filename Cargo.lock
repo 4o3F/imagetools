@@ -824,6 +824,7 @@ dependencies = [
  "opencv",
  "rand 0.8.5",
  "rayon",
+ "rayon-progress",
  "regex",
  "serde",
  "serde_json",
@@ -959,7 +960,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0c2a198fb6b0eada2a8df47933734e6d35d350665a33a3593d7164fa52c75c19"
 dependencies = [
  "cfg-if",
- "windows-targets 0.48.5",
+ "windows-targets 0.52.6",
 ]
 
 [[package]]
@@ -1665,6 +1666,15 @@ checksum = "1465873a3dfdaa8ae7cb14b4383657caab0b3e8a0aa9ae8e04b044854c8dfce2"
 dependencies = [
  "crossbeam-deque",
  "crossbeam-utils",
+]
+
+[[package]]
+name = "rayon-progress"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "35b64ab4d27434ed26877f51bdae59a85d218f8d81f2defa2b5eaa580fb228c2"
+dependencies = [
+ "rayon",
 ]
 
 [[package]]

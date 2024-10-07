@@ -3,13 +3,13 @@ use opencv::{
     imgcodecs,
 };
 use rayon::prelude::*;
+use rayon_progress::ProgressAdaptor;
 use std::{
     collections::HashMap,
     sync::{Arc, Mutex},
 };
 use tracing_unwrap::ResultExt;
 
-#[tracing::instrument]
 pub fn calc_iou(target_img: &String, gt_img: &String) {
     tracing::info!("Start loading images");
     let target_img = imgcodecs::imread(&target_img, imgcodecs::IMREAD_COLOR)
@@ -31,10 +31,10 @@ pub fn calc_iou(target_img: &String, gt_img: &String) {
     let rows = gt_img.rows();
     let cols = gt_img.cols();
 
-    let span = tracing::span!(tracing::Level::INFO, "calc_iou");
-    let _enter = span.enter();
-
-    (0..rows).into_par_iter().for_each(|i| {
+    let row_iter = ProgressAdaptor::new(0..rows);
+    let row_progress = row_iter.items_processed();
+    let row_total = row_iter.len();
+    row_iter.for_each(|i| {
         let mut row_intersection: HashMap<(u8, u8, u8), i64> = HashMap::new();
         let mut row_union: HashMap<(u8, u8, u8), i64> = HashMap::new();
         let mut row_confusion_matrix: HashMap<(u8, u8, u8), HashMap<(u8, u8, u8), i64>> =
@@ -78,7 +78,9 @@ pub fn calc_iou(target_img: &String, gt_img: &String) {
         for (color, value) in row_confusion_matrix.into_iter() {
             *confusion_matrix.entry(color).or_insert_with(HashMap::new) = value;
         }
-        tracing::trace!("Y {} done", i);
+    if  row_progress.get() != 0 && row_progress.get() % 1000 == 0 {
+            tracing::info!("Row {} / {} done", row_progress.get(), row_total);
+        }
     });
 
     let mut iou = HashMap::new();
