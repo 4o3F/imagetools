@@ -20,6 +20,7 @@ pub fn calc_iou(target_img: &String, gt_img: &String) {
 
     let mut intersection: HashMap<(u8, u8, u8), i64> = HashMap::new();
     let mut union: HashMap<(u8, u8, u8), i64> = HashMap::new();
+    let mut confusion_matrix: HashMap<(u8, u8, u8), HashMap<(u8, u8, u8), i64>> = HashMap::new();
 
     let rows = gt_img.rows();
     let cols = gt_img.cols();
@@ -36,17 +37,16 @@ pub fn calc_iou(target_img: &String, gt_img: &String) {
             let color1 = (pixel1[0], pixel1[1], pixel1[2]);
             let color2 = (pixel2[0], pixel2[1], pixel2[2]);
 
-            // 更新交集和并集
-            if pixel1[0] > 0 || pixel1[1] > 0 || pixel1[2] > 0 {
-                *union.entry(color1).or_insert(0) += 1;
-            }
-            if pixel2[0] > 0 || pixel2[1] > 0 || pixel2[2] > 0 {
-                *union.entry(color2).or_insert(0) += 1;
-            }
+            *union.entry(color1).or_insert(0) += 1;
+
+            *union.entry(color2).or_insert(0) += 1;
 
             if pixel1 == pixel2 {
                 *intersection.entry(color1).or_insert(0) += 1;
             }
+
+            let entry = confusion_matrix.entry(color2).or_insert_with(HashMap::new);
+            *entry.entry(color1).or_insert(0) += 1;
         }
         tracing::trace!("Y {} done", i);
     }
@@ -81,4 +81,19 @@ pub fn calc_iou(target_img: &String, gt_img: &String) {
         );
     }
     tracing::info!("Mean IoU: {}", mean_iou);
+    tracing::info!("Confusion Matrix:");
+    for (true_color, predictions) in &confusion_matrix {
+        for (predicted_color, count) in predictions {
+            tracing::info!(
+                "True: RGB({},{},{}) Predicted: RGB({},{},{}) Count: {}",
+                true_color.0,
+                true_color.1,
+                true_color.2,
+                predicted_color.0,
+                predicted_color.1,
+                predicted_color.2,
+                count
+            );
+        }
+    }
 }
