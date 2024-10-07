@@ -535,7 +535,7 @@ pub async fn split_images_with_filter(
                 // Crop horizontally from right
                 for x_index in 0..x_count {
                     for y_index in 0..y_count {
-                        let label_id = format!("{}_LTR_x{}_y{}", label_id, x_index, y_index);
+                        let label_id = format!("{}_RTL_x{}_y{}", label_id, x_index, y_index);
                         let cropped = core::Mat::roi(
                             &img,
                             core::Rect::new(
@@ -626,8 +626,9 @@ pub async fn split_images_with_filter(
             // Crop horizontally from left
             for x_index in 0..x_count {
                 for y_index in 0..y_count {
-                    let img_id = format!("{}_RTL_x{}_y{}", img_id, x_index, y_index);
+                    let img_id = format!("{}_LTR_x{}_y{}", img_id, x_index, y_index);
                     if !valid_id.read().unwrap().contains(&img_id) {
+                        tracing::trace!("Skipping {}", img_id);
                         continue;
                     }
                     let cropped = core::Mat::roi(
@@ -663,6 +664,7 @@ pub async fn split_images_with_filter(
                 for y_index in 0..y_count {
                     let img_id = format!("{}_RTL_x{}_y{}", img_id, x_index, y_index);
                     if !valid_id.read().unwrap().contains(&img_id) {
+                        tracing::trace!("Skipping {}", img_id);
                         continue;
                     }
                     let cropped = core::Mat::roi(
@@ -693,7 +695,6 @@ pub async fn split_images_with_filter(
 
             tracing::info!("Image {} LTR iteration done", img_id);
 
-            // cropped_images.lock().unwrap().extend(imgs_map);
             tracing::info!("Image {} process done", img_id);
         });
     }
