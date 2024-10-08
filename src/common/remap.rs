@@ -2,6 +2,7 @@ use image::Rgb;
 use opencv::{
     core::{Mat, MatTrait, MatTraitConst, Vec3b, Vector, CV_8U, CV_8UC3},
     imgcodecs::{self, imread, imwrite},
+    imgproc::COLOR_BGR2GRAY,
 };
 
 use std::{
@@ -12,7 +13,7 @@ use std::{
     sync::{Arc, RwLock},
 };
 use tokio::{sync::Semaphore, task::JoinSet};
-use tracing_unwrap::ResultExt;
+use tracing_unwrap::{OptionExt, ResultExt};
 
 use crate::THREAD_POOL;
 
@@ -315,19 +316,32 @@ pub async fn rgb2class(dataset_path: &String, rgb_list: &str) {
                 Mat::new_rows_cols_with_default(1, 256, CV_8UC3, opencv::core::Scalar::all(0.))
                     .expect_or_log("Create LUT error");
 
-            for i in 0..=255u8 {
-                let lut_value = lut
-                    .at_2d_mut::<Vec3b>(0, i.into())
-                    .expect_or_log("Get LUT value error");
+            let mut lut_vec: Vector<Mat> = Vector::new();
+            opencv::core::split(&lut, &mut lut_vec).expect_or_log("Split LUT error");
 
-                *lut_value = Vec3b::from_array([i, i, i]);
+            if lut_vec.len() != 3 {
+                tracing::error!("LUT initialize error");
             }
             transform_map.read().unwrap().iter().for_each(|(k, v)| {
-                let lut_value = lut
-                    .at_2d_mut::<Vec3b>(0, *v as i32)
-                    .expect_or_log("Get LUT value error");
-                *lut_value = Vec3b::from_array([k[0], k[1], k[2]]);
+                *lut_vec
+                    .get(0)
+                    .unwrap()
+                    .at_2d_mut::<u8>(0, k[0] as i32)
+                    .unwrap() = *v;
+                *lut_vec
+                    .get(1)
+                    .unwrap()
+                    .at_2d_mut::<u8>(0, k[1] as i32)
+                    .unwrap() = *v;
+                *lut_vec
+                    .get(2)
+                    .unwrap()
+                    .at_2d_mut::<u8>(0, k[2] as i32)
+                    .unwrap() = *v;
             });
+
+            opencv::core::merge(&lut_vec, &mut lut).expect_or_log("Merge LUT error");
+
             let mut result = Mat::default();
             opencv::core::lut(&img, &lut, &mut result).unwrap();
 
@@ -339,6 +353,9 @@ pub async fn rgb2class(dataset_path: &String, rgb_list: &str) {
                     entry.file_name().unwrap().to_str().unwrap()
                 )
             );
+            let mut gray_result = Mat::default();
+            opencv::imgproc::cvt_color(&result, &mut gray_result, COLOR_BGR2GRAY, 0)
+                .expect_or_log("Cvt color to gray error");
             imwrite(
                 format!(
                     "{}\\output\\{}",
@@ -346,7 +363,7 @@ pub async fn rgb2class(dataset_path: &String, rgb_list: &str) {
                     entry.file_name().unwrap().to_str().unwrap()
                 )
                 .as_str(),
-                &result,
+                &gray_result,
                 &Vector::new(),
             )
             .unwrap();
@@ -365,5 +382,12 @@ pub async fn rgb2class(dataset_path: &String, rgb_list: &str) {
         }
     }
     tracing::info!("All done");
-    tracing::info!("Saved to {}\\output\\", dataset_path.to_str().unwrap());
+    tracing::info!(
+        "Saved to {}\\output\\",
+        dataset_path
+            .parent()
+            .expect_or_log("Get parent error")
+            .to_str()
+            .unwrap()
+    );
 }
