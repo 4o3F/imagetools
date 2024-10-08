@@ -5,6 +5,8 @@ use opencv::{core::MatTrait, imgproc};
 use tokio::{fs::File, io::AsyncWriteExt, sync::Semaphore, task::JoinSet};
 use tracing_unwrap::ResultExt;
 
+use crate::THREAD_POOL;
+
 pub async fn rgb2yolo(dataset_path: &String, rgb_list: &str) {
     let mut color_class_map = HashMap::<Rgb<u8>, u32>::new();
     // 卫星数据
@@ -52,7 +54,9 @@ pub async fn rgb2yolo(dataset_path: &String, rgb_list: &str) {
         .expect_or_log("Create output dir error");
 
     let mut threads = JoinSet::new();
-    let sem = Arc::new(Semaphore::new(10));
+    let sem = Arc::new(Semaphore::new(
+        (*THREAD_POOL.read().expect_or_log("Get pool error")).into(),
+    ));
 
     // Walk through all images in BASE_PATH
     let entries = fs::read_dir(dataset_path).unwrap();

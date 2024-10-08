@@ -9,6 +9,8 @@ use tokio::{sync::Semaphore, task::JoinSet};
 use opencv::{core, imgcodecs, prelude::*};
 use tracing_unwrap::{OptionExt, ResultExt};
 
+use crate::THREAD_POOL;
+
 pub async fn split_images(dataset_path: &String, target_height: &u32, target_width: &u32) {
     let entries = fs::read_dir(dataset_path).expect_or_log("Failed to read directory");
     let mut threads = JoinSet::new();
@@ -426,7 +428,9 @@ pub async fn split_images_with_filter(
         );
     }
 
-    let sem = Arc::new(Semaphore::new(5));
+    let sem = Arc::new(Semaphore::new(
+        (*THREAD_POOL.read().expect_or_log("Get pool error")).into(),
+    ));
     let valid_id = Arc::new(RwLock::new(Vec::<String>::new()));
     let mut threads = tokio::task::JoinSet::new();
 
@@ -762,12 +766,7 @@ pub async fn stich_images(splited_images: &String, target_height: &i32, target_w
             tracing::trace!("RTL x {} y {}", x, y);
             let mut roi = Mat::roi_mut(
                 &mut result_mat,
-                core::Rect::new(
-                    x,
-                    y,
-                    size.unwrap().0,
-                    size.unwrap().1,
-                ),
+                core::Rect::new(x, y, size.unwrap().0, size.unwrap().1),
             )
             .expect_or_log("Failed to create roi");
             img.copy_to(&mut roi).expect_or_log("Failed to copy image");

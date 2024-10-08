@@ -1,3 +1,5 @@
+use std::sync::{LazyLock, RwLock};
+
 use clap::{Parser, Subcommand};
 use common::operation::EdgePosition;
 use tracing::Level;
@@ -5,7 +7,8 @@ use tracing_unwrap::ResultExt;
 
 mod common;
 mod yolo;
-// mod geo;
+
+static THREAD_POOL: LazyLock<RwLock<u16>> = LazyLock::new(|| RwLock::new(10));
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
@@ -14,8 +17,8 @@ struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
 
-    #[arg(long, default_value = "100", help = "Thread pool size")]
-    thread: usize,
+    #[arg(long, default_value = "10", help = "Thread pool size")]
+    thread: u16,
 }
 
 #[derive(Subcommand)]
@@ -165,7 +168,11 @@ enum CommonCommands {
     /// Map 8 bit grayscale PNG class image to RGB image
     #[command(name = "class2rgb")]
     Class2RGB {
-        #[arg(short, long, help = "The path for the folder containing images / The path of the image")]
+        #[arg(
+            short,
+            long,
+            help = "The path for the folder containing images / The path of the image"
+        )]
         dataset_path: String,
 
         #[arg(short, long, help = "List of RGB colors, in R0,G0,B0;R1,G1,B1 format")]
@@ -175,7 +182,11 @@ enum CommonCommands {
     /// Map RGB image to 8 bit grayscale PNG class image
     #[command(name = "rgb2class")]
     RGB2Class {
-        #[arg(short, long, help = "The path for the folder containing images")]
+        #[arg(
+            short,
+            long,
+            help = "The path for the folder containing images / The path of the image"
+        )]
         dataset_path: String,
 
         #[arg(short, long, help = "List of RGB colors, in R0,G0,B0;R1,G1,B1 format")]
@@ -344,9 +355,13 @@ async fn main() {
     let cli = Cli::parse();
 
     rayon::ThreadPoolBuilder::new()
-        .num_threads(cli.thread)
+        .num_threads(cli.thread.into())
         .build_global()
         .unwrap();
+
+    *THREAD_POOL
+        .write()
+        .expect_or_log("Get thread pool lock failed") = cli.thread;
 
     match &cli.command {
         Some(Commands::Common { command }) => match command {

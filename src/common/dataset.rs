@@ -11,10 +11,14 @@ use opencv::{
 use tokio::{sync::Semaphore, task::JoinSet};
 use tracing_unwrap::{OptionExt, ResultExt};
 
+use crate::THREAD_POOL;
+
 pub async fn split_dataset(dataset_path: &String, train_ratio: &f32) {
     let entries = fs::read_dir(dataset_path).unwrap();
     let mut threads = JoinSet::new();
-    let sem = Arc::new(Semaphore::new(10));
+    let sem = Arc::new(Semaphore::new(
+        (*THREAD_POOL.read().expect_or_log("Get pool error")).into(),
+    ));
     let result = Arc::new(Mutex::new(Vec::<String>::new()));
     for entry in entries {
         let entry = entry.unwrap();
@@ -59,7 +63,9 @@ pub async fn count_classes(dataset_path: &String) {
     let entries = fs::read_dir(dataset_path).unwrap();
 
     let type_map = Arc::new(Mutex::new(HashMap::<u8, i32>::new()));
-    let sem = Arc::new(Semaphore::new(5));
+    let sem = Arc::new(Semaphore::new(
+        (*THREAD_POOL.read().expect_or_log("Get pool error")).into(),
+    ));
     let mut threads = JoinSet::new();
     for entry in entries {
         let entry = entry.unwrap();
@@ -127,7 +133,9 @@ pub async fn calc_mean_std(dataset_path: &String) {
     let min_value = Arc::new(Mutex::new(f64::MAX));
     let max_value = Arc::new(Mutex::new(f64::MIN));
 
-    let sem = Arc::new(Semaphore::new(1));
+    let sem = Arc::new(Semaphore::new(
+        (*THREAD_POOL.read().expect_or_log("Get pool error")).into(),
+    ));
     for entry in entries {
         let entry = entry.expect_or_log("Failed to iterate entries");
         if !entry.path().is_file() {

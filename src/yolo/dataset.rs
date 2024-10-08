@@ -6,11 +6,16 @@ use std::{
 
 use itertools::Itertools;
 use tokio::{sync::Semaphore, task::JoinSet};
+use tracing_unwrap::ResultExt;
+
+use crate::THREAD_POOL;
 
 pub async fn split_dataset(dataset_path: &String, train_ratio: &f32) {
     let entries = fs::read_dir(dataset_path).unwrap();
     let mut threads = JoinSet::new();
-    let sem = Arc::new(Semaphore::new(10));
+    let sem = Arc::new(Semaphore::new(
+        (*THREAD_POOL.read().expect_or_log("Get pool error")).into(),
+    ));
     let result = Arc::new(Mutex::new(Vec::<String>::new()));
     for entry in entries {
         let entry = entry.unwrap();

@@ -10,6 +10,9 @@ use cocotools::{
 };
 use image::{Rgb, RgbImage};
 use tokio::{sync::Semaphore, task::JoinSet};
+use tracing_unwrap::ResultExt;
+
+use crate::THREAD_POOL;
 
 fn mask_image_array(image: &RgbImage, rgb: Rgb<u8>) -> ndarray::Array2<u8> {
     let mut mask = ndarray::Array2::<u8>::zeros((image.height() as usize, image.width() as usize));
@@ -55,7 +58,9 @@ pub async fn rgb2rle(dataset_path: &String, rgb_list: &str) {
     }
 
     let mut threads = JoinSet::new();
-    let sem = Arc::new(Semaphore::new(10));
+    let sem = Arc::new(Semaphore::new(
+        (*THREAD_POOL.read().expect_or_log("Get pool error")).into(),
+    ));
 
     let image_count = Arc::new(Mutex::new(0));
     let annotation_count = Arc::new(Mutex::new(0));

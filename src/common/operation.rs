@@ -7,6 +7,8 @@ use std::{fs, io::Cursor, sync::Arc};
 use tokio::{fs::File, io::AsyncWriteExt, sync::Semaphore, task::JoinSet};
 use tracing_unwrap::{OptionExt, ResultExt};
 
+use crate::THREAD_POOL;
+
 pub async fn resize_images(
     dataset_path: &String,
     target_height: &u32,
@@ -27,7 +29,9 @@ pub async fn resize_images(
 
     let entries = fs::read_dir(dataset_path).unwrap();
     let mut threads = JoinSet::new();
-    let sem = Arc::new(Semaphore::new(10));
+    let sem = Arc::new(Semaphore::new(
+        (*THREAD_POOL.read().expect_or_log("Get pool error")).into(),
+    ));
     fs::create_dir_all(format!("{}\\..\\resized\\", dataset_path)).unwrap();
     for entry in entries {
         let entry = entry.unwrap();
