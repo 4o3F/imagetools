@@ -13,6 +13,9 @@ struct Cli {
     /// Commands
     #[command(subcommand)]
     command: Option<Commands>,
+
+    #[arg(long, default_value = "100", help = "Thread pool size")]
+    thread: usize,
 }
 
 #[derive(Subcommand)]
@@ -330,8 +333,6 @@ enum YoloCommands {
 
 #[tokio::main]
 async fn main() {
-    // env_logger::init();
-
     // Do tracing init
     let subscriber = tracing_subscriber::fmt()
         .with_max_level(Level::TRACE)
@@ -341,6 +342,11 @@ async fn main() {
     tracing::subscriber::set_global_default(subscriber).expect_or_log("Init tracing failed");
 
     let cli = Cli::parse();
+
+    rayon::ThreadPoolBuilder::new()
+        .num_threads(cli.thread)
+        .build_global()
+        .unwrap();
 
     match &cli.command {
         Some(Commands::Common { command }) => match command {
