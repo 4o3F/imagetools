@@ -1,12 +1,14 @@
-use image::{GrayImage, Luma, Rgb, RgbImage};
+use image::{GrayImage, Luma, Rgb};
 use opencv::{
-    core::{MatTrait, MatTraitConst, Vec3b, Vector, CV_8U},
+    core::{Mat, MatTrait, MatTraitConst, Vec3b, Vector, CV_8U},
     imgcodecs::{self, imread, imwrite},
 };
+
 use std::{
     collections::HashMap,
     fs,
     ops::Deref,
+    path::PathBuf,
     sync::{Arc, RwLock},
 };
 use tokio::{sync::Semaphore, task::JoinSet};
@@ -169,10 +171,25 @@ pub fn remap_background_color(
 }
 
 pub async fn class2rgb(dataset_path: &String, rgb_list: &str) {
-    let entries = fs::read_dir(dataset_path).unwrap();
-    fs::create_dir_all(format!("{}\\..\\output\\", dataset_path)).unwrap();
+    let mut entries: Vec<PathBuf> = Vec::new();
+    let dataset_path = PathBuf::from(dataset_path.as_str());
+    if dataset_path.is_file() {
+        entries.push(dataset_path.clone());
+        fs::create_dir_all(format!(
+            "{}\\output\\",
+            dataset_path.parent().unwrap().to_str().unwrap()
+        ))
+        .expect_or_log("Failed to create directory");
+    } else {
+        entries = fs::read_dir(dataset_path.clone())
+            .unwrap()
+            .map(|x| x.unwrap().path())
+            .collect();
+        fs::create_dir_all(format!("{}\\output\\", dataset_path.to_str().unwrap()))
+            .expect_or_log("Failed to create directory");
+    }
 
-    let transform_map = Arc::new(RwLock::new(HashMap::<Luma<u8>, Rgb<u8>>::new()));
+    let transform_map = Arc::new(RwLock::new(HashMap::<u8, Vec3b>::new()));
     {
         // Split RGB list
         for (class_id, rgb) in rgb_list.split(";").enumerate() {
@@ -182,48 +199,56 @@ pub async fn class2rgb(dataset_path: &String, rgb_list: &str) {
                 rgb_vec.push(splited);
             }
 
-            let rgb = Rgb([rgb_vec[0], rgb_vec[1], rgb_vec[2]]);
-            let gray = Luma([class_id as u8]);
-            transform_map.write().unwrap().insert(gray, rgb);
+            transform_map.write().unwrap().insert(
+                class_id as u8,
+                Vec3b::from_array([rgb_vec[0], rgb_vec[1], rgb_vec[2]]),
+            );
         }
     }
     let mut threads = JoinSet::new();
     let sem = Arc::new(Semaphore::new(10));
     for entry in entries {
-        let entry = entry.unwrap();
         let sem = Arc::clone(&sem);
         let transform_map = Arc::clone(&transform_map);
-        let dataset_path = dataset_path.clone();
         threads.spawn(async move {
             let _ = sem.acquire().await.unwrap();
-            let img = image::open(entry.path()).unwrap();
-            let original_img = img.into_luma8();
-            let mut mapped_img = RgbImage::new(original_img.width(), original_img.height());
-            for ((original_x, original_y, original_pixel), (mapped_x, mapped_y, mapped_pixel)) in
-                original_img
-                    .enumerate_pixels()
-                    .zip(mapped_img.enumerate_pixels_mut())
-            {
-                if original_x != mapped_x || original_y != mapped_y {
-                    tracing::error!("Pixel coordinate mismatch");
-                    return;
-                }
-                let Luma([g]) = original_pixel;
-                let transform_map = transform_map.read().unwrap();
-                let new_color = transform_map.get(&Luma([*g])).unwrap();
-                let Rgb([r, g, b]) = mapped_pixel;
-                *r = new_color.0[0];
-                *g = new_color.0[1];
-                *b = new_color.0[2];
+            let img = imread(&entry.to_str().unwrap(), imgcodecs::IMREAD_COLOR).unwrap();
+
+            let rows = img.rows();
+            let mut lut: Vec<Vec3b> = Vec::with_capacity(rows as usize);
+
+            for _ in 0..256 {
+                lut.push(Vec3b::from_array([0, 0, 0]));
             }
-            mapped_img
-                .save(format!(
-                    "{}\\..\\output\\{}",
-                    dataset_path,
-                    entry.file_name().into_string().unwrap()
-                ))
-                .unwrap();
-            tracing::info!("{} finished", entry.file_name().into_string().unwrap());
+            transform_map.read().unwrap().iter().for_each(|(k, v)| {
+                lut[*k as usize] = *v;
+            });
+
+            let lut = Mat::from_slice(&lut).unwrap();
+
+            let mut result = Mat::default();
+            opencv::core::lut(&img, &lut, &mut result).unwrap();
+
+            tracing::trace!(
+                "Write to {}",
+                format!(
+                    "{}\\output\\{}",
+                    entry.parent().unwrap().to_str().unwrap(),
+                    entry.file_name().unwrap().to_str().unwrap()
+                )
+            );
+            imwrite(
+                format!(
+                    "{}\\output\\{}",
+                    entry.parent().unwrap().to_str().unwrap(),
+                    entry.file_name().unwrap().to_str().unwrap()
+                )
+                .as_str(),
+                &result,
+                &Vector::new(),
+            )
+            .unwrap();
+            tracing::info!("{} finished", entry.file_name().unwrap().to_str().unwrap());
         });
     }
     while threads.join_next().await.is_some() {}

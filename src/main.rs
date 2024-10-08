@@ -165,7 +165,7 @@ enum CommonCommands {
     /// Map 8 bit grayscale PNG class image to RGB image
     #[command(name = "class2rgb")]
     Class2RGB {
-        #[arg(short, long, help = "The path for the folder containing images")]
+        #[arg(short, long, help = "The path for the folder containing images / The path of the image")]
         dataset_path: String,
 
         #[arg(short, long, help = "List of RGB colors, in R0,G0,B0;R1,G1,B1 format")]
