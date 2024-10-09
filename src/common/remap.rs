@@ -1,23 +1,19 @@
-use image::Rgb;
 use opencv::{
-    core::{Mat, MatTrait, MatTraitConst, Vec3b, Vector, CV_8U, CV_8UC3},
+    core::{Mat, MatTrait, MatTraitConst, Vec3b, Vector},
     imgcodecs::{self, imread, imwrite},
     imgproc::COLOR_BGR2GRAY,
 };
+use rayon::prelude::*;
+use rayon_progress::ProgressAdaptor;
 
-use std::{
-    collections::HashMap,
-    fs,
-    ops::Deref,
-    path::PathBuf,
-    sync::{Arc, RwLock},
-};
+use parking_lot::RwLock;
+use std::{collections::HashMap, fs, path::PathBuf, sync::Arc};
 use tokio::{sync::Semaphore, task::JoinSet};
 use tracing_unwrap::{OptionExt, ResultExt};
 
 use crate::THREAD_POOL;
 
-pub fn remap_color(original_color: &str, new_color: &str, image_path: &String, save_path: &String) {
+pub async fn remap_color(original_color: &str, new_color: &str, dataset_path: &String) {
     let mut original_color_vec: Vec<u8> = vec![];
     for splited in original_color.split(',') {
         let splited = splited.parse::<u8>().unwrap();
@@ -30,100 +26,110 @@ pub fn remap_color(original_color: &str, new_color: &str, image_path: &String, s
         new_color_vec.push(splited);
     }
 
-    let original_color_rgb: Rgb<u8> = if original_color_vec.len() != 3 {
-        tracing::error!("Malformed original color RGB, please use R,G,B format");
+    if original_color_vec.len() != 3 || new_color_vec.len() != 3 {
+        tracing::error!("Malformed color RGB, please use R,G,B format");
         return;
-    } else {
-        Rgb([
-            original_color_vec[0],
-            original_color_vec[1],
-            original_color_vec[2],
-        ])
-    };
-
-    let new_color_rgb: Rgb<u8> = if new_color_vec.len() != 3 {
-        tracing::error!("Malformed new color RGB, please use R,G,B format");
-        return;
-    } else {
-        Rgb([new_color_vec[0], new_color_vec[1], new_color_vec[2]])
-    };
-
-    let img = image::open(image_path).unwrap();
-    let mut img = img.into_rgb8();
-    for (_, _, pixel) in img.enumerate_pixels_mut() {
-        if *pixel == original_color_rgb {
-            *pixel = new_color_rgb
-        }
     }
-    img.save(save_path).unwrap();
 
-    tracing::info!("{} color remap done!", image_path);
-}
+    let mut entries: Vec<PathBuf> = Vec::new();
+    let dataset_path = PathBuf::from(dataset_path);
+    if dataset_path.is_file() {
+        entries.push(dataset_path.clone());
+        fs::create_dir_all(format!(
+            "{}\\output\\",
+            dataset_path.parent().unwrap().to_str().unwrap()
+        ))
+        .expect_or_log("Failed to create directory");
+    } else {
+        entries = fs::read_dir(dataset_path.clone())
+            .unwrap()
+            .map(|x| x.unwrap().path())
+            .collect();
+        fs::create_dir_all(format!("{}\\output\\", dataset_path.to_str().unwrap()))
+            .expect_or_log("Failed to create directory");
+    }
 
-pub async fn remap_color_dir(
-    original_color: &String,
-    new_color: &String,
-    path: &String,
-    save_path: &String,
-) {
-    let entries = fs::read_dir(path).unwrap();
     let mut threads = JoinSet::new();
-    let sem = Arc::new(Semaphore::new(
+    let semaphore = Arc::new(Semaphore::new(
         (*THREAD_POOL.read().expect_or_log("Get pool error")).into(),
     ));
-    let original_color = Arc::new(original_color.deref().to_string());
-    let new_color = Arc::new(new_color.deref().to_string());
-    let path = Arc::new(path.deref().to_string());
-    let save_path = Arc::new(save_path.deref().to_string());
-
     for entry in entries {
-        let entry = entry.unwrap();
-        if entry
-            .path()
-            .file_name()
-            .unwrap()
-            .to_str()
-            .unwrap()
-            .ends_with(".png")
-        {
-            let permit = Arc::clone(&sem);
-            let original_color = Arc::clone(&original_color);
-            let new_color = Arc::clone(&new_color);
-            let path = Arc::clone(&path);
-            let save_path = Arc::clone(&save_path);
+        let entry = entry.clone();
+        let sem = semaphore.clone();
+        let original_color = original_color_vec.clone();
+        let new_color = new_color_vec.clone();
 
-            threads.spawn(async move {
-                let _permit = permit.acquire().await.unwrap();
-                remap_color(
-                    &original_color,
-                    &new_color,
-                    &format!(
-                        "{}\\{}",
-                        path,
-                        entry.path().file_name().unwrap().to_str().unwrap()
-                    ),
-                    &format!(
-                        "{}\\{}",
-                        save_path,
-                        entry.path().file_name().unwrap().to_str().unwrap()
-                    ),
+        threads.spawn(async move {
+            let _ = sem.acquire().await.unwrap();
+            let img = imread(&entry.to_str().unwrap(), imgcodecs::IMREAD_COLOR).unwrap();
+            if img.channels() != 3 {
+                tracing::error!(
+                    "Image {} is not RGB",
+                    entry.file_name().unwrap().to_str().unwrap()
                 );
+                return Err(());
+            }
+
+            let rows = img.rows();
+            let cols = img.cols();
+            let row_iter = ProgressAdaptor::new(0..rows);
+            let row_progress = row_iter.items_processed();
+            let img = Arc::new(RwLock::new(img));
+
+            row_iter.for_each(|row_index| {
+                let mut row = img.read().row(row_index).unwrap().clone_pointee();
+                for col_index in 0..cols {
+                    let pixel = row.at_2d_mut::<Vec3b>(0, col_index).unwrap();
+                    if pixel[0] == original_color[0]
+                        && pixel[1] == original_color[1]
+                        && pixel[2] == original_color[2]
+                    {
+                        pixel[0] = new_color[0];
+                        pixel[1] = new_color[1];
+                        pixel[2] = new_color[2];
+                    }
+                }
+
+                let mut original_row = img.write();
+                let mut original_row = original_row.row_mut(row_index).unwrap();
+
+                row.copy_to(&mut original_row)
+                    .expect_or_log("Copy row error");
+
+                tracing::trace!("Row {} done", row_progress.get());
+                if row_progress.get() != 0 && row_progress.get() % 100 == 0 {
+                    tracing::info!("Row {} done", row_progress.get());
+                }
             });
+
+            imwrite(
+                format!(
+                    "{}\\output\\{}",
+                    entry.parent().unwrap().to_str().unwrap(),
+                    entry.file_name().unwrap().to_str().unwrap()
+                )
+                .as_str(),
+                &*img.read(),
+                &Vector::new(),
+            )
+            .expect_or_log("Failed to save image");
+
+            tracing::info!("{} finished", entry.file_name().unwrap().to_str().unwrap());
+            Ok(())
+        });
+    }
+
+    while let Some(res) = threads.join_next().await {
+        if let Err(err) = res {
+            tracing::error!("{:?}", err);
+            break;
         }
     }
 
-    while threads.join_next().await.is_some() {}
-
-    tracing::info!("All color remap done!");
+    tracing::info!("All done!");
 }
-
-pub fn remap_background_color(
-    valid_colors: &String,
-    new_color: &str,
-    image_path: &String,
-    save_path: &String,
-) {
-    let mut original_color_vec: Vec<Vec<u8>> = vec![];
+pub async fn remap_background_color(valid_colors: &str, new_color: &str, dataset_path: &String) {
+    let mut valid_color_vec: Vec<Vec<u8>> = vec![];
     for valid_color in valid_colors.split(";") {
         let mut color_vec = vec![];
         for splited in valid_color.split(',') {
@@ -133,46 +139,114 @@ pub fn remap_background_color(
             color_vec.push(splited);
         }
 
-        original_color_vec.push(color_vec);
+        valid_color_vec.push(color_vec);
     }
 
     let mut new_color_vec: Vec<u8> = vec![];
     for splited in new_color.split(',') {
-        let splited = splited
-            .parse::<u8>()
-            .expect_or_log("Malformed new color RGB, please use R,G,B format");
+        let splited = splited.parse::<u8>().unwrap();
         new_color_vec.push(splited);
     }
 
-    if original_color_vec.iter().any(|x| x.len() != 3) || new_color_vec.len() != 3 {
+    if valid_color_vec.iter().any(|x| x.len() != 3) || new_color_vec.len() != 3 {
         tracing::error!("Malformed color RGB, please use R,G,B format");
         return;
     }
 
-    let new_color_rgb = [new_color_vec[0], new_color_vec[1], new_color_vec[2]];
-
-    let mut img = imread(&image_path, imgcodecs::IMREAD_COLOR).expect_or_log("Open image error");
-    tracing::info!("Image loaded");
-    if img.depth() != CV_8U {
-        tracing::error!("Image depth is not 8U, not supported");
-        return;
+    let mut entries: Vec<PathBuf> = Vec::new();
+    let dataset_path = PathBuf::from(dataset_path);
+    if dataset_path.is_file() {
+        entries.push(dataset_path.clone());
+        fs::create_dir_all(format!(
+            "{}\\output\\",
+            dataset_path.parent().unwrap().to_str().unwrap()
+        ))
+        .expect_or_log("Failed to create directory");
+    } else {
+        entries = fs::read_dir(dataset_path.clone())
+            .unwrap()
+            .map(|x| x.unwrap().path())
+            .collect();
+        fs::create_dir_all(format!("{}\\output\\", dataset_path.to_str().unwrap()))
+            .expect_or_log("Failed to create directory");
     }
-    let cols = img.cols();
-    let rows = img.rows();
 
-    for y in 0..rows {
-        for x in 0..cols {
-            let pixel = img.at_2d_mut::<Vec3b>(y, x).unwrap();
-            if !original_color_vec.contains(&vec![pixel.0[0], pixel.0[1], pixel.0[2]]) {
-                pixel.0 = new_color_rgb;
+    let mut threads = JoinSet::new();
+    let semaphore = Arc::new(Semaphore::new(
+        (*THREAD_POOL.read().expect_or_log("Get pool error")).into(),
+    ));
+    for entry in entries {
+        let entry = entry.clone();
+        let sem = semaphore.clone();
+        let valid_colors = valid_color_vec.clone();
+        let new_color = new_color_vec.clone();
+
+        threads.spawn(async move {
+            let _ = sem.acquire().await.unwrap();
+            let img = imread(&entry.to_str().unwrap(), imgcodecs::IMREAD_COLOR).unwrap();
+            if img.channels() != 3 {
+                tracing::error!(
+                    "Image {} is not RGB",
+                    entry.file_name().unwrap().to_str().unwrap()
+                );
+                return Err(());
             }
-        }
-        tracing::trace!("Y {} done", y);
+
+            let rows = img.rows();
+            let cols = img.cols();
+            let row_iter = ProgressAdaptor::new(0..rows);
+            let row_progress = row_iter.items_processed();
+            let img = Arc::new(RwLock::new(img));
+
+            row_iter.for_each(|row_index| {
+                let mut row = img.read().row(row_index).unwrap().clone_pointee();
+                for col_index in 0..cols {
+                    let pixel = row.at_2d_mut::<Vec3b>(0, col_index).unwrap();
+
+                    if !valid_colors.contains(&vec![pixel[0], pixel[1], pixel[2]]) {
+                        pixel[0] = new_color[0];
+                        pixel[1] = new_color[1];
+                        pixel[2] = new_color[2];
+                    }
+                }
+
+                let mut original_row = img.write();
+                let mut original_row = original_row.row_mut(row_index).unwrap();
+
+                row.copy_to(&mut original_row)
+                    .expect_or_log("Copy row error");
+
+                tracing::trace!("Row {} done", row_progress.get());
+                if row_progress.get() != 0 && row_progress.get() % 100 == 0 {
+                    tracing::info!("Row {} done", row_progress.get());
+                }
+            });
+
+            imwrite(
+                format!(
+                    "{}\\output\\{}",
+                    entry.parent().unwrap().to_str().unwrap(),
+                    entry.file_name().unwrap().to_str().unwrap()
+                )
+                .as_str(),
+                &*img.read(),
+                &Vector::new(),
+            )
+            .expect_or_log("Failed to save image");
+
+            tracing::info!("{} finished", entry.file_name().unwrap().to_str().unwrap());
+            Ok(())
+        });
     }
 
-    imwrite(save_path, &img, &Vector::new()).expect_or_log("Save image error");
+    while let Some(res) = threads.join_next().await {
+        if let Err(err) = res {
+            tracing::error!("{:?}", err);
+            break;
+        }
+    }
 
-    tracing::info!("{} background color remap done!", image_path);
+    tracing::info!("All done!");
 }
 
 pub async fn class2rgb(dataset_path: &String, rgb_list: &str) {
@@ -204,7 +278,7 @@ pub async fn class2rgb(dataset_path: &String, rgb_list: &str) {
                 rgb_vec.push(splited);
             }
 
-            transform_map.write().unwrap().insert(
+            transform_map.write().insert(
                 class_id as u8,
                 Vec3b::from_array([rgb_vec[0], rgb_vec[1], rgb_vec[2]]),
             );
@@ -227,7 +301,7 @@ pub async fn class2rgb(dataset_path: &String, rgb_list: &str) {
             for _ in 0..256 {
                 lut.push(Vec3b::from_array([0, 0, 0]));
             }
-            transform_map.read().unwrap().iter().for_each(|(k, v)| {
+            transform_map.read().iter().for_each(|(k, v)| {
                 lut[*k as usize] = *v;
             });
 
@@ -295,7 +369,6 @@ pub async fn rgb2class(dataset_path: &String, rgb_list: &str) {
 
             transform_map
                 .write()
-                .unwrap()
                 .insert([rgb_vec[0], rgb_vec[1], rgb_vec[2]], class_id as u8);
         }
     }
@@ -304,6 +377,8 @@ pub async fn rgb2class(dataset_path: &String, rgb_list: &str) {
     let sem = Arc::new(Semaphore::new(
         (*THREAD_POOL.read().expect_or_log("Get pool error")).into(),
     ));
+
+    tracing::trace!("Processing {} images", entries.len());
     for entry in entries {
         let sem = Arc::clone(&sem);
         let transform_map = Arc::clone(&transform_map);
@@ -311,51 +386,44 @@ pub async fn rgb2class(dataset_path: &String, rgb_list: &str) {
         threads.spawn(async move {
             let _ = sem.acquire().await.unwrap();
             let img = imread(&entry.to_str().unwrap(), imgcodecs::IMREAD_COLOR).unwrap();
+            let rows = img.rows();
+            let cols = img.cols();
+            let row_iter = ProgressAdaptor::new(0..rows);
+            let row_progress = row_iter.items_processed();
+            let img = Arc::new(RwLock::new(img));
 
-            let mut lut =
-                Mat::new_rows_cols_with_default(1, 256, CV_8UC3, opencv::core::Scalar::all(0.))
-                    .expect_or_log("Create LUT error");
+            row_iter.for_each(|row_index| {
+                let mut row = img.read().row(row_index).unwrap().clone_pointee();
+                for col_index in 0..cols {
+                    let pixel = row.at_2d_mut::<Vec3b>(0, col_index).unwrap();
+                    if transform_map
+                        .read()
+                        .contains_key(&[pixel[0], pixel[1], pixel[2]])
+                    {
+                        let new_color = transform_map.read();
+                        let new_color = new_color.get(&[pixel[0], pixel[1], pixel[2]]).unwrap();
+                        pixel[0] = *new_color;
+                        pixel[1] = *new_color;
+                        pixel[2] = *new_color;
+                    }
+                }
 
-            let mut lut_vec: Vector<Mat> = Vector::new();
-            opencv::core::split(&lut, &mut lut_vec).expect_or_log("Split LUT error");
+                let mut original_row = img.write();
+                let mut original_row = original_row.row_mut(row_index).unwrap();
 
-            if lut_vec.len() != 3 {
-                tracing::error!("LUT initialize error");
-            }
-            transform_map.read().unwrap().iter().for_each(|(k, v)| {
-                *lut_vec
-                    .get(0)
-                    .unwrap()
-                    .at_2d_mut::<u8>(0, k[0] as i32)
-                    .unwrap() = *v;
-                *lut_vec
-                    .get(1)
-                    .unwrap()
-                    .at_2d_mut::<u8>(0, k[1] as i32)
-                    .unwrap() = *v;
-                *lut_vec
-                    .get(2)
-                    .unwrap()
-                    .at_2d_mut::<u8>(0, k[2] as i32)
-                    .unwrap() = *v;
+                row.copy_to(&mut original_row)
+                    .expect_or_log("Copy row error");
+
+                tracing::trace!("Row {} done", row_progress.get());
+                if row_progress.get() != 0 && row_progress.get() % 100 == 0 {
+                    tracing::info!("Row {} done", row_progress.get());
+                }
             });
 
-            opencv::core::merge(&lut_vec, &mut lut).expect_or_log("Merge LUT error");
-
-            let mut result = Mat::default();
-            opencv::core::lut(&img, &lut, &mut result).unwrap();
-
-            tracing::trace!(
-                "Write to {}",
-                format!(
-                    "{}\\output\\{}",
-                    entry.parent().unwrap().to_str().unwrap(),
-                    entry.file_name().unwrap().to_str().unwrap()
-                )
-            );
             let mut gray_result = Mat::default();
-            opencv::imgproc::cvt_color(&result, &mut gray_result, COLOR_BGR2GRAY, 0)
+            opencv::imgproc::cvt_color(&*img.read(), &mut gray_result, COLOR_BGR2GRAY, 0)
                 .expect_or_log("Cvt color to gray error");
+
             imwrite(
                 format!(
                     "{}\\output\\{}",

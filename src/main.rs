@@ -69,34 +69,12 @@ enum CommonCommands {
         #[arg(short, long, help = "In R,G,B format")]
         new_color: String,
 
-        #[arg(short, long, help = "The path for the original image")]
-        image_path: String,
-
-        #[arg(short, long, help = "The path for the mapped new image")]
-        save_path: String,
-    },
-
-    /// Map one RGB color to another for all PNG images in a given folder
-    MapColorDir {
-        #[arg(short, long, help = "In R,G,B format")]
-        original_color: String,
-
-        #[arg(short, long, help = "In R,G,B format")]
-        new_color: String,
-
         #[arg(
             short,
             long,
-            help = "The path for the folder containing original images"
+            help = "The path for the original image / Directory containing images"
         )]
-        image_path: String,
-
-        #[arg(
-            short,
-            long,
-            help = "The path for the folder to save the mapped new images"
-        )]
-        save_path: String,
+        dataset_path: String,
     },
 
     MapBackgroundColor {
@@ -107,10 +85,7 @@ enum CommonCommands {
         new_color: String,
 
         #[arg(short, long, help = "The path for the original image")]
-        image_path: String,
-
-        #[arg(short, long, help = "The path for the mapped new image")]
-        save_path: String,
+        dataset_path: String,
     },
 
     /// Split large images to small pieces for augmentation purposes
@@ -382,32 +357,16 @@ async fn main() {
             CommonCommands::MapColor {
                 original_color,
                 new_color,
-                image_path,
-                save_path,
+                dataset_path,
             } => {
-                common::remap::remap_color(original_color, new_color, image_path, save_path);
+                common::remap::remap_color(original_color, new_color, dataset_path).await;
             }
             CommonCommands::MapBackgroundColor {
                 valid_colors,
                 new_color,
-                image_path,
-                save_path,
+                dataset_path,
             } => {
-                common::remap::remap_background_color(
-                    valid_colors,
-                    new_color,
-                    image_path,
-                    save_path,
-                );
-            }
-            CommonCommands::MapColorDir {
-                original_color,
-                new_color,
-                image_path,
-                save_path,
-            } => {
-                common::remap::remap_color_dir(original_color, new_color, image_path, save_path)
-                    .await;
+                common::remap::remap_background_color(valid_colors, new_color, dataset_path).await;
             }
             CommonCommands::SplitImages {
                 dataset_path,
