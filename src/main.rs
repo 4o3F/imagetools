@@ -170,19 +170,23 @@ enum CommonCommands {
 
     /// Resize all images in a given folder to a given size with a given filter
     ResizeImages {
-        #[arg(short, long, help = "The path for the folder containing images")]
+        #[arg(
+            short,
+            long,
+            help = "The path of the image / directory containing images"
+        )]
         dataset_path: String,
 
         #[arg(long, help = "Target height")]
-        height: u32,
+        height: i32,
 
         #[arg(long, help = "Target width")]
-        width: u32,
+        width: i32,
 
         #[arg(
             short,
             long,
-            help = "Filter type, could be `nearest`, `linear`, `cubic`, `gaussian` or `lanczos`"
+            help = "Filter type, could be `nearest`, `linear`, `cubic` or `lanczos`"
         )]
         filter: String,
     },
