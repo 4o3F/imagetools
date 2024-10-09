@@ -77,6 +77,7 @@ enum CommonCommands {
         dataset_path: String,
     },
 
+    /// Map all the non-valid color in the image to a given color
     MapBackgroundColor {
         #[arg(short, long, help = "In R1,G1,B1;R2,G2,B2 format")]
         valid_colors: String,
@@ -101,7 +102,7 @@ enum CommonCommands {
     },
 
     /// Split large images to small pieces for augmentation purposes with bias
-    /// Bias is added between each split
+    /// (Bias is added between each split)
     SplitImagesWithBias {
         #[arg(short, long, help = "The path for the folder containing images")]
         dataset_path: String,
