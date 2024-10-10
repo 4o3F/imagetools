@@ -77,7 +77,10 @@ jobs:
       - name: Download packages
         uses: actions/download-artifact@v4
         with:
-          path: ~/release-binary
+          path: /home/runner/release-binary
+      - name: List artifacts
+        run: |
+          find /home/runner -type f
       - name: Release
         uses: softprops/action-gh-release@v2
         with:
@@ -85,5 +88,5 @@ jobs:
           name: Dev build
           tag_name: "pre-release"
           files: |
-            ~/release-binary/imagetools*/*
+            ~/release-binary/imagetools*/**
   
