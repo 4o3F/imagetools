@@ -55,6 +55,7 @@ jobs:
         run: scripts/install.sh
         shell: bash
 
+      - uses: Swatinem/rust-cache@v2
       - name: Build project
         run: scripts/build.sh
         shell: bash
@@ -78,9 +79,11 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: /home/runner/release-binary
-      - name: List artifacts
+      - name: Compress artifacts
         run: |
-          find /home/runner -type f
+          cd /home/runner/release-binary
+          for i in */; do zip -r "${i%/}.zip" "$i"; done
+          ls /home/runner/release-binary
       - name: Release
         uses: softprops/action-gh-release@v2
         with:
@@ -88,5 +91,5 @@ jobs:
           name: Dev build
           tag_name: "pre-release"
           files: |
-            ~/release-binary/imagetools*/**
+            /home/runner/release-binary/*.zip
   
