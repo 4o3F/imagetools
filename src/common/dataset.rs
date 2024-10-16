@@ -16,22 +16,38 @@ use tracing_unwrap::{OptionExt, ResultExt};
 
 use crate::THREAD_POOL;
 
-pub async fn split_dataset(dataset_path: &String, train_ratio: &f32) {
-    let entries = fs::read_dir(dataset_path).unwrap();
+pub async fn generate_dataset_list(dataset_path: &String, train_ratio: &f32) {
+    // Check dataset_path contain images and labels folder
+
+    let dataset_path = PathBuf::from(dataset_path);
+    if !(dataset_path.join("images").is_dir() && dataset_path.join("labels").is_dir()) {
+        tracing::error!(
+            "Invalid dataset path: {}, should contain images and labels folders",
+            dataset_path.display()
+        );
+        return;
+    }
+
+    let dataset_path = dataset_path.join("images");
+    let entries = fs::read_dir(dataset_path.clone())
+        .unwrap()
+        .into_iter()
+        .map(|x| x.unwrap().path())
+        .collect::<Vec<PathBuf>>();
+
     let mut threads = JoinSet::new();
     let sem = Arc::new(Semaphore::new(
         (*THREAD_POOL.read().expect_or_log("Get pool error")).into(),
     ));
     let result = Arc::new(Mutex::new(Vec::<String>::new()));
     for entry in entries {
-        let entry = entry.unwrap();
         let permit = Arc::clone(&sem);
         let result = Arc::clone(&result);
         threads.spawn(async move {
             let _permit = permit.acquire().await.unwrap();
             result.lock().unwrap().push(format!(
                 "{}\n",
-                entry.path().file_name().unwrap().to_str().unwrap()
+                entry.file_name().unwrap().to_str().unwrap()
             ));
         });
     }
@@ -45,6 +61,7 @@ pub async fn split_dataset(dataset_path: &String, train_ratio: &f32) {
     let train_data = data[0..train_count as usize].to_vec();
     let valid_data = data[train_count as usize..].to_vec();
 
+    let dataset_path = dataset_path.to_str().unwrap();
     fs::write(
         format!("{}\\..\\val.txt", dataset_path),
         valid_data.concat(),
@@ -60,6 +77,196 @@ pub async fn split_dataset(dataset_path: &String, train_ratio: &f32) {
     tracing::info!("Valid dataset length: {}", valid_data.len());
     tracing::info!("Saved to {}\\..\\val.txt", dataset_path);
     tracing::info!("Dataset split done");
+}
+
+// TODO: rewrite this to make it suitable for all datasets
+pub async fn split_dataset(dataset_path: &String, train_ratio: &f32) {
+    // Check dataset_path contain images and labels folder
+
+    let dataset_path = PathBuf::from(dataset_path);
+    if !(dataset_path.join("images").is_dir() && dataset_path.join("labels").is_dir()) {
+        tracing::error!(
+            "Invalid dataset path: {}, should contain images and labels folders",
+            dataset_path.display()
+        );
+        return;
+    }
+
+    // Create dir
+    fs::create_dir_all(dataset_path.join("images").join("train"))
+        .expect_or_log("Failed to create directory");
+    fs::create_dir_all(dataset_path.join("images").join("val"))
+        .expect_or_log("Failed to create directory");
+
+    fs::create_dir_all(dataset_path.join("labels").join("train"))
+        .expect_or_log("Failed to create directory");
+    fs::create_dir_all(dataset_path.join("labels").join("val"))
+        .expect_or_log("Failed to create directory");
+
+    let dataset_path = dataset_path.join("images");
+    let entries = fs::read_dir(dataset_path.clone())
+        .unwrap()
+        .into_iter()
+        .map(|x| x.unwrap().path())
+        .collect::<Vec<PathBuf>>();
+
+    let mut threads = JoinSet::new();
+    let sem = Arc::new(Semaphore::new(
+        (*THREAD_POOL.read().expect_or_log("Get pool error")).into(),
+    ));
+    let result = Arc::new(Mutex::new(Vec::<PathBuf>::new()));
+    for entry in entries {
+        let permit = Arc::clone(&sem);
+        let result = Arc::clone(&result);
+        threads.spawn(async move {
+            let _permit = permit.acquire().await.unwrap();
+            result.lock().unwrap().push(entry);
+        });
+    }
+
+    while threads.join_next().await.is_some() {}
+
+    let mut data = result.lock().unwrap();
+    use rand::seq::SliceRandom;
+    data.shuffle(&mut rand::thread_rng());
+    let train_count = (data.len() as f32 * train_ratio) as i32;
+    let train_data = data[0..train_count as usize].to_vec();
+    let valid_data = data[train_count as usize..].to_vec();
+
+    for entry in train_data {
+        if !entry.is_file() {
+            continue;
+        }
+        tracing::info!(
+            "Renaming {} to {}",
+            &entry.display(),
+            &dataset_path
+                .join("train")
+                .join(entry.file_name().unwrap())
+                .display()
+        );
+        fs::rename(
+            &entry,
+            dataset_path.join("train").join(entry.file_name().unwrap()),
+        )
+        .unwrap();
+
+        tracing::info!(
+            "Renaming {} to {}",
+            &entry
+                .to_str()
+                .unwrap()
+                .to_string()
+                .replace("images", "labels")
+                .replace(".tif", ".png"),
+            &dataset_path
+                .parent()
+                .unwrap()
+                .join("labels")
+                .join("train")
+                .join(
+                    entry
+                        .file_name()
+                        .unwrap()
+                        .to_str()
+                        .unwrap()
+                        .to_string()
+                        .replace(".tif", ".png"),
+                )
+                .display(),
+        );
+        fs::rename(
+            &entry
+                .to_str()
+                .unwrap()
+                .to_string()
+                .replace("images", "labels")
+                .replace(".tif", ".png"),
+            dataset_path
+                .parent()
+                .unwrap()
+                .join("labels")
+                .join("train")
+                .join(
+                    entry
+                        .file_name()
+                        .unwrap()
+                        .to_str()
+                        .unwrap()
+                        .to_string()
+                        .replace(".tif", ".png"),
+                ),
+        )
+        .unwrap();
+    }
+
+    for entry in valid_data {
+        if !entry.is_file() {
+            continue;
+        }
+        tracing::info!(
+            "Renaming {} to {}",
+            &entry.display(),
+            &dataset_path
+                .join("val")
+                .join(entry.file_name().unwrap())
+                .display()
+        );
+        fs::rename(
+            &entry,
+            dataset_path.join("val").join(entry.file_name().unwrap()),
+        )
+        .unwrap();
+
+        tracing::info!(
+            "Renaming {} to {}",
+            &entry
+                .to_str()
+                .unwrap()
+                .to_string()
+                .replace("images", "labels")
+                .replace(".tif", ".png"),
+            &dataset_path
+                .parent()
+                .unwrap()
+                .join("labels")
+                .join("val")
+                .join(
+                    entry
+                        .file_name()
+                        .unwrap()
+                        .to_str()
+                        .unwrap()
+                        .to_string()
+                        .replace(".tif", ".png"),
+                )
+                .display()
+        );
+
+        fs::rename(
+            &entry
+                .to_str()
+                .unwrap()
+                .to_string()
+                .replace("images", "labels")
+                .replace(".tif", ".png"),
+            dataset_path
+                .parent()
+                .unwrap()
+                .join("labels")
+                .join("val")
+                .join(
+                    entry
+                        .file_name()
+                        .unwrap()
+                        .to_str()
+                        .unwrap()
+                        .to_string()
+                        .replace(".tif", ".png"),
+                ),
+        )
+        .unwrap();
+    }
 }
 
 pub async fn count_classes(dataset_path: &String) {

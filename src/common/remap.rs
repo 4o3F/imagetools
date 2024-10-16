@@ -1,14 +1,18 @@
+use indicatif::ProgressStyle;
 use opencv::{
-    core::{Mat, MatTrait, MatTraitConst, Vec3b, Vector},
+    core::{Mat, MatTrait, MatTraitConst, MatTraitManual, Vec3b, Vector},
     imgcodecs::{self, imread, imwrite},
     imgproc::COLOR_BGR2GRAY,
 };
+use rayon::iter::ParallelBridge;
 use rayon::prelude::*;
 use rayon_progress::ProgressAdaptor;
 
 use parking_lot::RwLock;
 use std::{collections::HashMap, fs, path::PathBuf, sync::Arc};
 use tokio::{sync::Semaphore, task::JoinSet};
+use tracing::{info_span, Instrument, Span};
+use tracing_indicatif::span_ext::IndicatifSpanExt;
 use tracing_unwrap::{OptionExt, ResultExt};
 
 use crate::THREAD_POOL;
@@ -96,9 +100,9 @@ pub async fn remap_color(original_color: &str, new_color: &str, dataset_path: &S
                 row.copy_to(&mut original_row)
                     .expect_or_log("Copy row error");
 
-                tracing::trace!("Row {} done", row_progress.get());
+                // tracing::trace!("Row {} done", row_progress.get());
                 if row_progress.get() != 0 && row_progress.get() % 100 == 0 {
-                    tracing::info!("Row {} done", row_progress.get());
+                    tracing::debug!("Row {} done", row_progress.get());
                 }
             });
 
@@ -216,7 +220,7 @@ pub async fn remap_background_color(valid_colors: &str, new_color: &str, dataset
                 row.copy_to(&mut original_row)
                     .expect_or_log("Copy row error");
 
-                tracing::trace!("Row {} done", row_progress.get());
+                // tracing::trace!("Row {} done", row_progress.get());
                 if row_progress.get() != 0 && row_progress.get() % 100 == 0 {
                     tracing::info!("Row {} done", row_progress.get());
                 }
@@ -379,65 +383,91 @@ pub async fn rgb2class(dataset_path: &String, rgb_list: &str) {
     ));
 
     tracing::trace!("Processing {} images", entries.len());
+    let header_span = info_span!("remap_color");
+    header_span
+        .pb_set_style(&ProgressStyle::with_template("{spinner} Processing {msg}\n{wide_bar} {pos}/{len}").unwrap());
+    header_span.pb_set_length(entries.len() as u64);
+    header_span.pb_set_message("Processing");
+
+    let header_span_enter = header_span.enter();
+
     for entry in entries {
         let sem = Arc::clone(&sem);
         let transform_map = Arc::clone(&transform_map);
+        let header_span = header_span.clone();
+        threads.spawn(
+            async move {
+                let _ = sem.acquire().await.unwrap();
+                let mut img = imread(&entry.to_str().unwrap(), imgcodecs::IMREAD_COLOR).unwrap();
+                let transform_map = transform_map.read().clone();
 
-        threads.spawn(async move {
-            let _ = sem.acquire().await.unwrap();
-            let img = imread(&entry.to_str().unwrap(), imgcodecs::IMREAD_COLOR).unwrap();
-            let rows = img.rows();
-            let cols = img.cols();
-            let row_iter = ProgressAdaptor::new(0..rows);
-            let row_progress = row_iter.items_processed();
-            let img = Arc::new(RwLock::new(img));
+                img.iter_mut::<Vec3b>()
+                    .unwrap()
+                    .par_bridge()
+                    .for_each(|(_, data)| {
+                        if transform_map.contains_key(&[data[0], data[1], data[2]]) {
+                            let new_color =
+                                transform_map.get(&[data[0], data[1], data[2]]).unwrap();
+                            data[0] = *new_color;
+                            data[1] = *new_color;
+                            data[2] = *new_color;
+                        }
+                    });
+                // let rows = img.rows();
+                // let cols = img.cols();
+                // let row_iter = ProgressAdaptor::new(0..rows);
+                // let row_progress = row_iter.items_processed();
+                // let img = Arc::new(RwLock::new(img));
+                // row_iter.for_each(|row_index| {
+                //     let mut row = img.read().row(row_index).unwrap();
+                //     let mut row = img.read().row(row_index).unwrap().clone_pointee();
+                //     for col_index in 0..cols {
+                //         let pixel = row.at_2d_mut::<Vec3b>(0, col_index).unwrap();
+                //         if transform_map
+                //             .read()
+                //             .contains_key(&[pixel[0], pixel[1], pixel[2]])
+                //         {
+                //             let new_color = transform_map.read();
+                //             let new_color = new_color.get(&[pixel[0], pixel[1], pixel[2]]).unwrap();
+                //             pixel[0] = *new_color;
+                //             pixel[1] = *new_color;
+                //             pixel[2] = *new_color;
+                //         }
+                //     }
+                //     let mut original_row = img.write();
+                //     let mut original_row = original_row.row_mut(row_index).unwrap();
+                //     row.copy_to(&mut original_row)
+                //         .expect_or_log("Copy row error");
+                //     // tracing::trace!("Row {} done", row_progress.get());
+                //     if row_progress.get() != 0 && row_progress.get() % 100 == 0 {
+                //         tracing::debug!("Row {} done", row_progress.get());
+                //     }
+                // });
 
-            row_iter.for_each(|row_index| {
-                let mut row = img.read().row(row_index).unwrap().clone_pointee();
-                for col_index in 0..cols {
-                    let pixel = row.at_2d_mut::<Vec3b>(0, col_index).unwrap();
-                    if transform_map
-                        .read()
-                        .contains_key(&[pixel[0], pixel[1], pixel[2]])
-                    {
-                        let new_color = transform_map.read();
-                        let new_color = new_color.get(&[pixel[0], pixel[1], pixel[2]]).unwrap();
-                        pixel[0] = *new_color;
-                        pixel[1] = *new_color;
-                        pixel[2] = *new_color;
-                    }
-                }
+                let mut gray_result = Mat::default();
+                opencv::imgproc::cvt_color(&img, &mut gray_result, COLOR_BGR2GRAY, 0)
+                    .expect_or_log("Cvt color to gray error");
 
-                let mut original_row = img.write();
-                let mut original_row = original_row.row_mut(row_index).unwrap();
-
-                row.copy_to(&mut original_row)
-                    .expect_or_log("Copy row error");
-
-                tracing::trace!("Row {} done", row_progress.get());
-                if row_progress.get() != 0 && row_progress.get() % 100 == 0 {
-                    tracing::info!("Row {} done", row_progress.get());
-                }
-            });
-
-            let mut gray_result = Mat::default();
-            opencv::imgproc::cvt_color(&*img.read(), &mut gray_result, COLOR_BGR2GRAY, 0)
-                .expect_or_log("Cvt color to gray error");
-
-            imwrite(
-                format!(
-                    "{}\\output\\{}",
-                    entry.parent().unwrap().to_str().unwrap(),
-                    entry.file_name().unwrap().to_str().unwrap()
+                imwrite(
+                    format!(
+                        "{}\\output\\{}",
+                        entry.parent().unwrap().to_str().unwrap(),
+                        entry.file_name().unwrap().to_str().unwrap()
+                    )
+                    .as_str(),
+                    &gray_result,
+                    &Vector::new(),
                 )
-                .as_str(),
-                &gray_result,
-                &Vector::new(),
-            )
-            .unwrap();
+                .unwrap();
 
-            tracing::info!("{} finished", entry.file_name().unwrap().to_str().unwrap());
-        });
+                // tracing::info!("{} finished", entry.file_name().unwrap().to_str().unwrap());
+                Span::current()
+                    .pb_set_message(&format!("{}", entry.file_name().unwrap().to_str().unwrap()));
+                Span::current().pb_inc(1);
+                // tracing::debug!("Span ID {:?}", Span::current());
+            }
+            .instrument(header_span),
+        );
     }
     while let Some(result) = threads.join_next().await {
         match result {
@@ -449,6 +479,10 @@ pub async fn rgb2class(dataset_path: &String, rgb_list: &str) {
             }
         }
     }
+
+    std::mem::drop(header_span_enter);
+    std::mem::drop(header_span);
+
     tracing::info!("All done");
     tracing::info!(
         "Saved to {}\\output\\",

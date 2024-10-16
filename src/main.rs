@@ -2,13 +2,15 @@ use std::sync::{LazyLock, RwLock};
 
 use clap::{Parser, Subcommand};
 use common::operation::EdgePosition;
-use tracing::Level;
+use tracing::level_filters::LevelFilter;
+use tracing_indicatif::IndicatifLayer;
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 use tracing_unwrap::ResultExt;
 
 mod common;
 mod yolo;
 
-static THREAD_POOL: LazyLock<RwLock<u16>> = LazyLock::new(|| RwLock::new(10));
+static THREAD_POOL: LazyLock<RwLock<u16>> = LazyLock::new(|| RwLock::new(100));
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
@@ -210,9 +212,30 @@ enum CommonCommands {
         rgb_list: String,
     },
 
-    /// Split dataset into train and test sets
+    /// Split dataset into train and test sets inplace
     SplitDataset {
-        #[arg(short, long, help = "The path for the folder containing dataset files")]
+        #[arg(
+            short,
+            long,
+            help = "The path for the dataset root folder, should contain images and labels folders"
+        )]
+        dataset_path: String,
+
+        #[arg(
+            short,
+            long,
+            help = "The ratio of train set, should be between 0 and 1"
+        )]
+        train_ratio: f32,
+    },
+
+    /// Split dataset into train and test sets and save file names to txt file
+    GenerateDatasetList {
+        #[arg(
+            short,
+            long,
+            help = "The path for the dataset root folder, should contain images and labels folders"
+        )]
         dataset_path: String,
 
         #[arg(
@@ -325,12 +348,21 @@ enum YoloCommands {
 #[tokio::main]
 async fn main() {
     // Do tracing init
-    let subscriber = tracing_subscriber::fmt()
-        .with_max_level(Level::TRACE)
-        .with_level(true)
-        .finish();
+    let indicatif_layer = IndicatifLayer::new();
+    let fmt_layer = tracing_subscriber::fmt::layer()
+        .with_writer(indicatif_layer.get_stderr_writer())
+        .with_level(true);
+    let filter_layer = EnvFilter::builder()
+        .with_default_directive(LevelFilter::INFO.into())
+        .from_env_lossy();
 
-    tracing::subscriber::set_global_default(subscriber).expect_or_log("Init tracing failed");
+    tracing_subscriber::registry()
+        .with(fmt_layer)
+        .with(filter_layer)
+        .with(indicatif_layer)
+        .init();
+
+    // tracing::subscriber::set_global_default(subscriber).expect_or_log("Init tracing failed");
 
     let cli = Cli::parse();
 
@@ -446,6 +478,12 @@ async fn main() {
                 rgb_list,
             } => {
                 common::remap::rgb2class(dataset_path, rgb_list).await;
+            }
+            CommonCommands::GenerateDatasetList {
+                dataset_path,
+                train_ratio,
+            } => {
+                common::dataset::generate_dataset_list(dataset_path, train_ratio).await;
             }
             CommonCommands::SplitDataset {
                 dataset_path,
