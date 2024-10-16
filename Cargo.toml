@@ -4,14 +4,13 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-chrono = "*"
 cocotools = { path = "./third_party/cocotools" }
-image = "*"
-imageproc = "*"
-ndarray = "*"
-rand = "*"
+image = "0.25.2"
+imageproc = "0.25.0"
+ndarray = "0.16.1"
+rand = "0.8.5"
 serde = { version = "1", features = ["derive"] }
-serde_json = "1.0.114"
+serde_json = "1.0.128"
 tokio = { version = "1", features = ["full"] }
 opencv = { version = "0.93.1", default-features = false, features = [
     "clang-runtime",
@@ -19,17 +18,18 @@ opencv = { version = "0.93.1", default-features = false, features = [
     "imgcodecs",
 ] }
 # gdal = "0.17"
-itertools = "0.12.1"
-clap = { version = "4.5.9", features = ["derive"] }
+itertools = "0.13.0"
+clap = { version = "4.5.20", features = ["derive"] }
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 tracing = "0.1.40"
 tracing-unwrap = "1.0.1"
-regex = "*"
-rayon = "*"
+regex = "1.11.0"
+rayon = "1.10.0"
 rayon-progress = "1.0.0"
 parking_lot = "0.12.3"
 tracing-indicatif = "0.3.6"
 indicatif = "0.17.8"
+tracing-tracy = "0.11.3"
 
 [profile.release]
 debug = true

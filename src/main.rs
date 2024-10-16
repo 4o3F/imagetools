@@ -357,12 +357,11 @@ async fn main() {
         .from_env_lossy();
 
     tracing_subscriber::registry()
-        .with(fmt_layer)
         .with(filter_layer)
+        .with(fmt_layer)
         .with(indicatif_layer)
+        .with(tracing_tracy::TracyLayer::default())
         .init();
-
-    // tracing::subscriber::set_global_default(subscriber).expect_or_log("Init tracing failed");
 
     let cli = Cli::parse();
 
