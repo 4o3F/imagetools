@@ -16,14 +16,22 @@ use tracing_unwrap::{OptionExt, ResultExt};
 
 use crate::THREAD_POOL;
 
-// This will generate CSV format dataset list for huggingface dataset lib
-pub async fn generate_dataset_csv(dataset_path: &String, train_ratio: &f32) {
-    let dataset_path = PathBuf::from(dataset_path);
+fn check_semantic_segmentation_dataset(dataset_path: &PathBuf) -> bool {
     if !(dataset_path.join("images").is_dir() && dataset_path.join("labels").is_dir()) {
         tracing::error!(
             "Invalid dataset path: {}, should contain images and labels folders",
             dataset_path.display()
         );
+        false
+    } else {
+        true
+    }
+}
+
+// This will generate CSV format dataset list for huggingface dataset lib
+pub fn generate_dataset_csv(dataset_path: &String, train_ratio: &f32) {
+    let dataset_path = PathBuf::from(dataset_path);
+    if !check_semantic_segmentation_dataset(&dataset_path) {
         return;
     }
 
@@ -80,6 +88,78 @@ pub async fn generate_dataset_csv(dataset_path: &String, train_ratio: &f32) {
         "Saved to train: {} val: {}",
         dataset_path.join("train.csv").display(),
         dataset_path.join("val.csv").display()
+    );
+}
+
+pub fn generate_dataset_json(dataset_path: &String, train_ratio: &f32) {
+    let dataset_path = PathBuf::from(dataset_path);
+    if !check_semantic_segmentation_dataset(&dataset_path) {
+        return;
+    }
+
+    #[derive(serde::Serialize, Clone)]
+    struct Item {
+        image: String,
+        label: String,
+    }
+
+    let mut images = fs::read_dir(dataset_path.join("images").clone())
+        .unwrap()
+        .into_iter()
+        .map(|x| x.unwrap().path())
+        .filter(|x| x.is_file())
+        .collect::<Vec<PathBuf>>();
+
+    images.sort_unstable_by(|a, b| a.file_name().cmp(&b.file_name()));
+
+    let mut labels = fs::read_dir(dataset_path.join("labels").clone())
+        .unwrap()
+        .into_iter()
+        .map(|x| x.unwrap().path())
+        .filter(|x| x.is_file())
+        .collect::<Vec<PathBuf>>();
+
+    labels.sort_unstable_by(|a, b| a.file_name().cmp(&b.file_name()));
+
+    let mut data = Vec::<Item>::new();
+
+    for (image, label) in images.iter().zip(labels.iter()) {
+        if image.file_stem() != label.file_stem() {
+            return tracing::error!(
+                "Image and label should have same name, but encountered {}, {}",
+                image.display(),
+                label.display()
+            );
+        }
+
+        data.push(Item {
+            image: fs::canonicalize(image).unwrap().display().to_string(),
+            label: fs::canonicalize(label).unwrap().display().to_string(),
+        });
+    }
+
+    use rand::seq::SliceRandom;
+    data.shuffle(&mut rand::thread_rng());
+
+    let train_count = (data.len() as f32 * train_ratio) as i32;
+    let train_data = data[0..train_count as usize].to_vec();
+    let val_data = data[train_count as usize..].to_vec();
+
+    fs::write(
+        dataset_path.join("train.json"),
+        serde_json::to_string(&train_data).expect_or_log("Failed to serialize"),
+    )
+    .expect_or_log("Failed to write");
+
+    fs::write(
+        dataset_path.join("val.json"),
+        serde_json::to_string(&val_data).expect_or_log("Failed to serialize"),
+    )
+    .expect_or_log("Failed to write");
+    tracing::info!(
+        "Saved to train: {} val: {}",
+        dataset_path.join("train.json").display(),
+        dataset_path.join("val.json").display()
     );
 }
 

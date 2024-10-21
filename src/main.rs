@@ -229,6 +229,24 @@ enum CommonCommands {
         train_ratio: f32,
     },
 
+    /// Generate JSON format dataset list compatible with huggingface dataset library
+    #[command(name = "generate-dataset-json")]
+    GenerateDatasetJSON {
+        #[arg(
+            short,
+            long,
+            help = "The path for the dataset root folder, should contain images and labels folders"
+        )]
+        dataset_path: String,
+
+        #[arg(
+            short,
+            long,
+            help = "The ratio of train set, should be between 0 and 1"
+        )]
+        train_ratio: f32,
+    },
+
     /// Split dataset into train and test sets inplace
     SplitDataset {
         #[arg(
@@ -499,7 +517,13 @@ async fn main() {
                 dataset_path,
                 train_ratio,
             } => {
-                common::dataset::generate_dataset_csv(dataset_path, train_ratio).await;
+                common::dataset::generate_dataset_csv(dataset_path, train_ratio);
+            }
+            CommonCommands::GenerateDatasetJSON {
+                dataset_path,
+                train_ratio,
+            } => {
+                common::dataset::generate_dataset_json(dataset_path, train_ratio);
             }
             CommonCommands::GenerateDatasetList {
                 dataset_path,
