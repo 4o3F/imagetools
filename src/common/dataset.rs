@@ -1,3 +1,4 @@
+use indicatif::ProgressStyle;
 use opencv::{
     core::{self, MatTraitConst},
     imgcodecs::{self, imread, IMREAD_GRAYSCALE},
@@ -12,6 +13,8 @@ use std::{
     sync::{Arc, Mutex},
 };
 use tokio::{sync::Semaphore, task::JoinSet};
+use tracing::{info_span, Instrument, Span};
+use tracing_indicatif::span_ext::IndicatifSpanExt;
 use tracing_unwrap::{OptionExt, ResultExt};
 
 use crate::THREAD_POOL;
@@ -497,6 +500,11 @@ pub async fn count_classes(dataset_path: &String) {
 
 pub async fn calc_mean_std(dataset_path: &String) {
     let entries = fs::read_dir(dataset_path).expect_or_log("Failed to read directory");
+    let entries = entries
+        .into_iter()
+        .map(|x| x.expect_or_log("Failed to iterate entries").path())
+        .collect::<Vec<PathBuf>>();
+    // let entries = Arc::new(entries);
     let mut threads = JoinSet::new();
 
     let mean_map = Arc::new(Mutex::new(HashMap::<usize, Vec<f64>>::new()));
@@ -505,13 +513,31 @@ pub async fn calc_mean_std(dataset_path: &String) {
     let min_value = Arc::new(Mutex::new(f64::MAX));
     let max_value = Arc::new(Mutex::new(f64::MIN));
 
-    let sem = Arc::new(Semaphore::new(
-        (*THREAD_POOL.read().expect_or_log("Get pool error")).into(),
-    ));
+    let header_span = info_span!("calc_mean_std_thread");
+    header_span.pb_set_style(
+        &ProgressStyle::with_template("{spinner} Processing {msg}\n{wide_bar} {pos}/{len}")
+            .unwrap(),
+    );
+    header_span.pb_set_length(entries.len() as u64);
+
+    let header_span_enter = header_span.enter();
+
+    // let entries_iter = ProgressAdaptor::new(0..entries.len());
+    // let entries_iter_progress = entries_iter.items_processed();
+    // let log_interval = {
+    //     let mut tmp = entries.len();
+    //     tracing::debug!("Entries len: {}", entries.len());
+    //     let mut result = 0;
+    //     while tmp != 0 {
+    //         result += 1;
+    //         tmp /= 10;
+    //     }
+    //     10_usize.pow(result - 2)
+    // };
+
     for entry in entries {
-        let entry = entry.expect_or_log("Failed to iterate entries");
-        if !entry.path().is_file() {
-            continue;
+        if !entry.is_file() {
+            return;
         }
         let mean_map = Arc::clone(&mean_map);
         let std_map = Arc::clone(&std_map);
@@ -519,71 +545,70 @@ pub async fn calc_mean_std(dataset_path: &String) {
         let global_min_value = Arc::clone(&min_value);
         let global_max_value = Arc::clone(&max_value);
 
-        let sem = Arc::clone(&sem);
-        threads.spawn(async move {
-            let _permit = sem
-                .acquire()
-                .await
-                .expect_or_log("Failed to acquire semaphore");
-            let image = imgcodecs::imread(
-                entry
-                    .path()
-                    .to_str()
-                    .expect_or_log("Failed to convert path to string"),
-                imgcodecs::IMREAD_UNCHANGED,
-            )
-            .expect_or_log("Failed to read image");
+        threads.spawn(
+            async move {
+                let image = imgcodecs::imread(
+                    entry
+                        .to_str()
+                        .expect_or_log("Failed to convert path to string"),
+                    imgcodecs::IMREAD_UNCHANGED,
+                )
+                .expect_or_log("Failed to read image");
 
-            let mut mean = core::Vector::<f64>::new();
-            let mut stddev = core::Vector::<f64>::new();
-            if image.empty() {
-                tracing::error!("Image {} is empty", entry.path().display());
-                return;
-            }
-            core::mean_std_dev(&image, &mut mean, &mut stddev, &core::no_array())
-                .expect_or_log("Failed to calculate mean & std dev of mat");
-            let mut min_value = 0.0;
-            let mut max_value = 0.0;
-            core::min_max_loc(
-                &image,
-                Some(&mut min_value),
-                Some(&mut max_value),
-                None,
-                None,
-                &core::no_array(),
-            )
-            .expect_or_log("Failed to find min & max value of mat");
-
-            let mut mean_map = mean_map.lock().expect_or_log("Failed to lock mean map");
-            let mut std_map = std_map.lock().expect_or_log("Failed to lock std map");
-            for i in 1..=mean.len() {
-                if !mean_map.contains_key(&i) {
-                    mean_map.insert(i, Vec::<f64>::new());
-                    std_map.insert(i, Vec::<f64>::new());
+                let mut mean = core::Vector::<f64>::new();
+                let mut stddev = core::Vector::<f64>::new();
+                if image.empty() {
+                    tracing::error!("Image {} is empty", entry.display());
+                    return;
                 }
-                mean_map
-                    .get_mut(&i)
-                    .unwrap()
-                    .push(mean.get(i - 1).expect_or_log("Failed to get mean value"));
-                std_map.get_mut(&i).unwrap().push(
-                    stddev
-                        .get(i - 1)
-                        .expect_or_log("Failed to get stddev value"),
-                );
+                core::mean_std_dev(&image, &mut mean, &mut stddev, &core::no_array())
+                    .expect_or_log("Failed to calculate mean & std dev of mat");
+                let mut min_value = 0.0;
+                let mut max_value = 0.0;
+                core::min_max_loc(
+                    &image,
+                    Some(&mut min_value),
+                    Some(&mut max_value),
+                    None,
+                    None,
+                    &core::no_array(),
+                )
+                .expect_or_log("Failed to find min & max value of mat");
+
+                let mut mean_map = mean_map.lock().expect_or_log("Failed to lock mean map");
+                let mut std_map = std_map.lock().expect_or_log("Failed to lock std map");
+                for i in 1..=mean.len() {
+                    if !mean_map.contains_key(&i) {
+                        mean_map.insert(i, Vec::<f64>::new());
+                        std_map.insert(i, Vec::<f64>::new());
+                    }
+                    mean_map
+                        .get_mut(&i)
+                        .unwrap()
+                        .push(mean.get(i - 1).expect_or_log("Failed to get mean value"));
+                    std_map.get_mut(&i).unwrap().push(
+                        stddev
+                            .get(i - 1)
+                            .expect_or_log("Failed to get stddev value"),
+                    );
+                }
+
+                let mut global_min_value = global_min_value
+                    .lock()
+                    .expect_or_log("Failed to lock min value");
+                let mut global_max_value = global_max_value
+                    .lock()
+                    .expect_or_log("Failed to lock max value");
+
+                *global_min_value = f64::min(*global_min_value, min_value);
+                *global_max_value = f64::max(*global_max_value, max_value);
+
+                Span::current()
+                    .pb_set_message(&format!("{}", entry.file_name().unwrap().to_str().unwrap()));
+                Span::current().pb_inc(1);
             }
-
-            let mut global_min_value = global_min_value
-                .lock()
-                .expect_or_log("Failed to lock min value");
-            let mut global_max_value = global_max_value
-                .lock()
-                .expect_or_log("Failed to lock max value");
-
-            *global_min_value = f64::min(*global_min_value, min_value);
-            *global_max_value = f64::max(*global_max_value, max_value);
-
-            tracing::info!("Image {} done", entry.path().display());
-        });
+            .in_current_span(),
+        );
     }
 
     while let Some(result) = threads.join_next().await {
@@ -596,6 +621,9 @@ pub async fn calc_mean_std(dataset_path: &String) {
             }
         }
     }
+
+    drop(header_span_enter);
+    drop(header_span);
 
     let mean_map = mean_map.lock().expect_or_log("Failed to lock mean map");
     let std_map = std_map.lock().expect_or_log("Failed to lock std map");
