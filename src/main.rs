@@ -247,6 +247,20 @@ enum CommonCommands {
         train_ratio: f32,
     },
 
+    /// Combine multiple JSON format dataset list compatible with huggingface dataset library
+    #[command(name = "combine-dataset-json")]
+    CombineDatasetJSON {
+        #[arg(
+            short,
+            long,
+            help = "Multiple paths for the dataset root folders, should contain pregenerated json files"
+        )]
+        dataset_path: Vec<String>,
+
+        #[arg(short, long, help = "Save path for combined JSON file")]
+        save_path: String,
+    },
+
     /// Split dataset into train and test sets inplace
     SplitDataset {
         #[arg(
@@ -285,6 +299,14 @@ enum CommonCommands {
     CountClasses {
         #[arg(short, long, help = "The path for the folder containing images")]
         dataset_path: String,
+    },
+
+    /// Count class for 8 bit PNG image & Calc class balance weight
+    CountRGB {
+        #[arg(short, long, help = "The path for the folder containing images")]
+        dataset_path: String,
+        #[arg(short, long, help = "RGB list, in R0,G0,B0;R1,G1,B1 format")]
+        rgb_list: String,
     },
 
     /// Strip image edges
@@ -525,6 +547,9 @@ async fn main() {
             } => {
                 common::dataset::generate_dataset_json(dataset_path, train_ratio);
             }
+            CommonCommands::CombineDatasetJSON { dataset_path, save_path } => {
+                common::dataset::combine_dataset_json(dataset_path, save_path);
+            }
             CommonCommands::GenerateDatasetList {
                 dataset_path,
                 train_ratio,
@@ -539,6 +564,12 @@ async fn main() {
             }
             CommonCommands::CountClasses { dataset_path } => {
                 common::dataset::count_classes(dataset_path).await;
+            }
+            CommonCommands::CountRGB {
+                dataset_path,
+                rgb_list,
+            } => {
+                common::dataset::count_rgb(dataset_path, rgb_list).await;
             }
             CommonCommands::StripImageEdge {
                 source_path,

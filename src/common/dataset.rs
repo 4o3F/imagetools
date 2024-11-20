@@ -1,7 +1,8 @@
 use indicatif::ProgressStyle;
 use opencv::{
-    core::{self, MatTraitConst},
-    imgcodecs::{self, imread, IMREAD_GRAYSCALE},
+    core::{self, MatTraitConst, ModifyInplace, Vec3b},
+    imgcodecs::{self, imread, IMREAD_COLOR, IMREAD_GRAYSCALE},
+    imgproc::COLOR_BGR2RGB,
 };
 use parking_lot::RwLock;
 use rayon::prelude::*;
@@ -94,16 +95,16 @@ pub fn generate_dataset_csv(dataset_path: &String, train_ratio: &f32) {
     );
 }
 
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
+struct DatasetItem {
+    image: String,
+    label: String,
+}
+
 pub fn generate_dataset_json(dataset_path: &String, train_ratio: &f32) {
     let dataset_path = PathBuf::from(dataset_path);
     if !check_semantic_segmentation_dataset(&dataset_path) {
         return;
-    }
-
-    #[derive(serde::Serialize, Clone)]
-    struct Item {
-        image: String,
-        label: String,
     }
 
     let mut images = fs::read_dir(dataset_path.join("images").clone())
@@ -124,7 +125,7 @@ pub fn generate_dataset_json(dataset_path: &String, train_ratio: &f32) {
 
     labels.sort_unstable_by(|a, b| a.file_name().cmp(&b.file_name()));
 
-    let mut data = Vec::<Item>::new();
+    let mut data = Vec::<DatasetItem>::new();
 
     for (image, label) in images.iter().zip(labels.iter()) {
         if image.file_stem() != label.file_stem() {
@@ -135,7 +136,7 @@ pub fn generate_dataset_json(dataset_path: &String, train_ratio: &f32) {
             );
         }
 
-        data.push(Item {
+        data.push(DatasetItem {
             image: fs::canonicalize(image).unwrap().display().to_string(),
             label: fs::canonicalize(label).unwrap().display().to_string(),
         });
@@ -164,6 +165,47 @@ pub fn generate_dataset_json(dataset_path: &String, train_ratio: &f32) {
         dataset_path.join("train.json").display(),
         dataset_path.join("val.json").display()
     );
+}
+
+pub fn combine_dataset_json(dataset_path: &Vec<String>, save_path: &String) {
+    let save_path = PathBuf::from(save_path);
+    if !save_path.is_dir() {
+        fs::create_dir_all(save_path.clone()).expect_or_log("Failed to create directory");
+    }
+    let mut combined_train_datas = Vec::<DatasetItem>::new();
+    let mut combined_val_datas = Vec::<DatasetItem>::new();
+    for dataset_path in dataset_path {
+        let dataset_path = PathBuf::from(dataset_path);
+        if !(dataset_path.join("train.json").is_file() && dataset_path.join("val.json").is_file()) {
+            tracing::error!(
+                "Invalid dataset path: {}, should contain train.json and val.json",
+                dataset_path.display()
+            );
+            return;
+        }
+
+        let train_data: Vec<DatasetItem> = serde_json::from_str(
+            &fs::read_to_string(dataset_path.join("train.json")).expect_or_log("Failed to read"),
+        )
+        .expect("Failed to deserialize");
+
+        let val_data: Vec<DatasetItem> = serde_json::from_str(
+            &fs::read_to_string(dataset_path.join("val.json")).expect_or_log("Failed to read"),
+        )
+        .expect("Failed to deserialize");
+
+        combined_train_datas.extend(train_data);
+        combined_val_datas.extend(val_data);
+    }
+
+    let combined_train_datas =
+        serde_json::to_string(&combined_train_datas).expect_or_log("Failed to serialize");
+
+    let combined_val_datas =
+        serde_json::to_string(&combined_val_datas).expect_or_log("Failed to serialize");
+
+    fs::write(save_path.join("train.json"), combined_train_datas).expect_or_log("Failed to write");
+    fs::write(save_path.join("val.json"), combined_val_datas).expect_or_log("Failed to write");
 }
 
 pub async fn generate_dataset_list(dataset_path: &String, train_ratio: &f32) {
@@ -496,6 +538,129 @@ pub async fn count_classes(dataset_path: &String) {
     }
 
     tracing::info!("Inverse class weights: {:?}", weight_map);
+}
+
+pub async fn count_rgb(dataset_path: &String, rgb_list: &String) {
+    let mut entries: Vec<PathBuf> = Vec::new();
+    let dataset_path = PathBuf::from(dataset_path);
+    if dataset_path.is_file() {
+        entries.push(dataset_path.clone());
+    } else {
+        entries = fs::read_dir(dataset_path.clone())
+            .unwrap()
+            .map(|x| x.unwrap().path())
+            .collect();
+    }
+
+    let count_map = Arc::new(Mutex::new(HashMap::<[u8; 3], u64>::new()));
+    {
+        // Split RGB list
+        for rgb in rgb_list.split(";") {
+            let mut rgb_vec: Vec<u8> = vec![];
+            for splited in rgb.split(',') {
+                let splited = splited.parse::<u8>().unwrap();
+                rgb_vec.push(splited);
+            }
+
+            count_map
+                .lock()
+                .unwrap()
+                .insert([rgb_vec[0], rgb_vec[1], rgb_vec[2]], 0);
+        }
+    }
+
+    let sem = Arc::new(Semaphore::new(
+        (*THREAD_POOL.read().expect_or_log("Get pool error")).into(),
+    ));
+    let mut threads = JoinSet::new();
+
+    let header_span = info_span!("count_rgb_threads");
+    header_span.pb_set_style(
+        &ProgressStyle::with_template("{spinner} Processing {msg}\n{wide_bar} {pos}/{len}")
+            .unwrap(),
+    );
+    header_span.pb_set_length(entries.len() as u64);
+    header_span.pb_set_message("Processing");
+
+    let header_span_enter = header_span.enter();
+
+    for entry in entries {
+        if !entry.is_file() {
+            continue;
+        }
+        let count_map = Arc::clone(&count_map);
+        let sem = Arc::clone(&sem);
+        let header_span = header_span.clone();
+        threads.spawn(
+            async move {
+                let _ = sem.acquire().await.unwrap();
+                let mut img = imread(entry.to_str().unwrap(), IMREAD_COLOR).unwrap();
+                unsafe {
+                    img.modify_inplace(|input, output| {
+                        opencv::imgproc::cvt_color(input, output, COLOR_BGR2RGB, 0)
+                            .expect_or_log("Cvt grayscale to RGB error")
+                    });
+                }
+                let row = img.rows();
+                let cols = img.cols();
+                let img = Arc::new(RwLock::new(img));
+
+                (0..row).into_par_iter().for_each(|row_index| {
+                    let mut row_type_map = HashMap::<[u8; 3], u64>::new();
+                    let row = img.read().row(row_index).unwrap().clone_pointee();
+                    for col_index in 0..cols {
+                        let pixel = row.at_2d::<Vec3b>(0, col_index).unwrap();
+                        row_type_map
+                            .entry(pixel.0)
+                            .and_modify(|x| *x = x.saturating_add(1))
+                            .or_insert(1);
+                    }
+
+                    let mut entry = count_map.lock().unwrap();
+                    for (rgb_color, count) in row_type_map.iter() {
+                        let total_count = entry.entry(*rgb_color).or_insert(0);
+                        *total_count = total_count.saturating_add(*count);
+                    }
+                });
+                tracing::trace!("Image {} done", entry.to_str().unwrap());
+                Span::current()
+                    .pb_set_message(&format!("{}", entry.file_name().unwrap().to_str().unwrap()));
+                Span::current().pb_inc(1);
+            }
+            .instrument(header_span),
+        );
+    }
+
+    while let Some(result) = threads.join_next().await {
+        match result {
+            Ok(()) => {}
+            Err(e) => {
+                tracing::error!("Error {}", e);
+                threads.abort_all();
+                break;
+            }
+        }
+    }
+    drop(header_span_enter);
+    drop(header_span);
+    tracing::info!("Dataset counted");
+
+    let type_map = count_map.lock().unwrap();
+    for (rgb, count) in (*type_map).iter() {
+        tracing::info!("{},{},{}: {}", rgb[0], rgb[1], rgb[2], count);
+    }
+    tracing::info!("Classes counts: {:?}", type_map);
+
+    // let total_pixel = type_map.values().sum::<i64>();
+
+    // let mut weight_map = HashMap::<[u8; 3], f64>::new();
+    // let class_count = type_map.len() as f64;
+    // for (class_id, count) in type_map.iter() {
+    //     let class_weight: f64 = f64::from(total_pixel) / (f64::from(*count) * class_count);
+    //     weight_map.insert(*class_id, class_weight);
+    // }
+
+    // tracing::info!("Inverse class weights: {:?}", weight_map);
 }
 
 pub async fn calc_mean_std(dataset_path: &String) {
