@@ -4,12 +4,15 @@ use std::{
     sync::{Arc, RwLock},
 };
 
+use indicatif::ProgressStyle;
 use parking_lot::Mutex;
 use rayon::prelude::*;
 use rayon_progress::ProgressAdaptor;
 use tokio::{sync::Semaphore, task::JoinSet};
 
 use opencv::{boxed_ref::BoxedRef, core, imgcodecs, prelude::*};
+use tracing::{info_span, Instrument, Span};
+use tracing_indicatif::span_ext::IndicatifSpanExt;
 use tracing_unwrap::{OptionExt, ResultExt};
 
 use crate::THREAD_POOL;
@@ -322,12 +325,13 @@ pub async fn split_images_with_bias(
                         .unwrap();
                         imgcodecs::imwrite(
                             format!(
-                                "{}\\..\\output\\{}_RTL_bias{}_x{}_y{}.png",
+                                "{}\\..\\output\\{}_RTL_bias{}_x{}_y{}.{}",
                                 dataset_path,
-                                entry.file_name().to_str().unwrap().replace(".png", ""),
+                                entry.path().file_stem().unwrap().to_str().unwrap(),
                                 bias,
                                 x_index,
-                                y_index
+                                y_index,
+                                entry.path().extension().unwrap().to_str().unwrap()
                             )
                             .as_str(),
                             &cropped_img,
@@ -406,6 +410,233 @@ pub fn check_valid_pixel_count(
     // }
     ratio > 0.01
 }
+
+pub async fn filter_dataset_with_rgblist(
+    dataset_path: &String,
+    rgb_list_str: &str,
+    valid_rgb_mode: bool,
+) {
+    let rgb_list: Arc<RwLock<Vec<core::Vec3b>>> = Arc::new(RwLock::new(Vec::new()));
+    for rgb in rgb_list_str.split(";") {
+        let rgb_list = Arc::clone(&rgb_list);
+        let mut rgb_list = rgb_list.write().unwrap();
+
+        let rgb_vec: Vec<u8> = rgb.split(',').map(|s| s.parse::<u8>().unwrap()).collect();
+
+        rgb_list.push(core::Vec3b::from([rgb_vec[0], rgb_vec[1], rgb_vec[2]]));
+    }
+
+    tracing::info!(
+        "RGB list length: {} Mode: {}",
+        rgb_list.read().unwrap().len(),
+        match valid_rgb_mode {
+            true => "Valid",
+            false => "Invalid",
+        }
+    );
+
+    let image_entries: Vec<PathBuf>;
+    let label_entries: Vec<PathBuf>;
+
+    let image_output_path: String;
+    let label_output_path: String;
+
+    let image_path = PathBuf::from(dataset_path).join("images");
+    let label_path = PathBuf::from(dataset_path).join("labels");
+    tracing::debug!(
+        "Image path: {}, label path: {}",
+        image_path.display(),
+        label_path.display()
+    );
+    tracing::debug!(
+        "Image path is dir: {}, label path is dir: {}",
+        image_path.is_dir(),
+        label_path.is_dir()
+    );
+    if !(label_path.is_dir() && image_path.is_dir()) {
+        tracing::error!("Image and label path should be both directories and exist.");
+        return ();
+    }
+
+    if image_path.is_dir() {
+        image_entries = fs::read_dir(&image_path)
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .collect();
+
+        image_output_path = format!("{}\\filtered\\", image_path.to_str().unwrap());
+    } else {
+        image_entries = vec![image_path.clone()];
+        image_output_path = format!(
+            "{}\\filtered\\images\\",
+            image_path.parent().unwrap().to_str().unwrap()
+        );
+    }
+
+    if label_path.is_dir() {
+        label_entries = fs::read_dir(&label_path)
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .collect();
+
+        label_output_path = format!("{}\\filtered\\", label_path.to_str().unwrap());
+    } else {
+        label_entries = vec![label_path.clone()];
+        label_output_path = format!(
+            "{}\\filtered\\labels\\",
+            label_path.parent().unwrap().to_str().unwrap()
+        );
+    }
+
+    let sem = Arc::new(Semaphore::new(
+        (*THREAD_POOL.read().expect_or_log("Get pool error")).into(),
+    ));
+    let valid_id = Arc::new(RwLock::new(Vec::<String>::new()));
+    let mut threads = tokio::task::JoinSet::new();
+
+    match fs::create_dir_all(&image_output_path) {
+        Ok(_) => {
+            tracing::info!("Image output directory created");
+        }
+        Err(e) => {
+            if e.kind() == std::io::ErrorKind::AlreadyExists {
+                tracing::info!("Image output directory already exists");
+            } else {
+                tracing::error!("Failed to create directory: {}", e);
+                return ();
+            }
+        }
+    }
+
+    match fs::create_dir_all(&label_output_path) {
+        Ok(_) => {
+            tracing::info!("Label output directory created");
+        }
+        Err(e) => {
+            if e.kind() == std::io::ErrorKind::AlreadyExists {
+                tracing::info!("Label output directory already exists");
+            } else {
+                tracing::error!("Failed to create directory: {}", e);
+                return ();
+            }
+        }
+    }
+
+    tracing::info!("Processing labels");
+    let header_span = info_span!("filter_dataset_with_rgblist_label_thread");
+    header_span.pb_set_style(
+        &ProgressStyle::with_template("{spinner} Processing {msg}\n{wide_bar} {pos}/{len}")
+            .unwrap(),
+    );
+    header_span.pb_set_length(label_entries.len() as u64);
+    header_span.pb_set_message("Processing");
+    let _header_guard = header_span.enter();
+
+    // for path in fs::read_dir(&label_output_path).unwrap() {
+    //     let path = path.unwrap().path();
+    //     valid_id
+    //         .write()
+    //         .unwrap()
+    //         .push(path.file_stem().unwrap().to_str().unwrap().to_string());
+    // }
+
+    for path in label_entries {
+        let sem = Arc::clone(&sem);
+        let valid_id = Arc::clone(&valid_id);
+        let rgb_list = Arc::clone(&rgb_list);
+        let label_output_path = label_output_path.clone();
+
+        threads.spawn(
+            async move {
+                let _permit = sem.acquire().await.unwrap();
+                let img = imgcodecs::imread(&path.to_str().unwrap(), imgcodecs::IMREAD_UNCHANGED)
+                    .unwrap();
+                let img = BoxedRef::from(img);
+                let rgb_list = rgb_list.read().unwrap();
+                if check_valid_pixel_count(&img, &rgb_list, valid_rgb_mode) {
+                    valid_id
+                        .write()
+                        .unwrap()
+                        .push(path.file_stem().unwrap().to_str().unwrap().to_string());
+                    imgcodecs::imwrite(
+                        &format!(
+                            "{}//{}.{}",
+                            label_output_path,
+                            path.file_stem().unwrap().to_str().unwrap(),
+                            path.extension().unwrap().to_str().unwrap(),
+                        ),
+                        &img,
+                        &core::Vector::new(),
+                    )
+                    .unwrap();
+                }
+                Span::current()
+                    .pb_set_message(&format!("{}", path.file_name().unwrap().to_str().unwrap()));
+                Span::current().pb_inc(1);
+            }
+            .in_current_span(),
+        );
+    }
+
+    while threads.join_next().await.is_some() {}
+    drop(_header_guard);
+    drop(header_span);
+    tracing::info!(
+        "Labels filter done, total {} valid labels",
+        valid_id.read().unwrap().len()
+    );
+
+    tracing::info!("Processing images");
+    let header_span = info_span!("filter_dataset_with_rgblist_image_thread");
+    header_span.pb_set_style(
+        &ProgressStyle::with_template("{spinner} Processing {msg}\n{wide_bar} {pos}/{len}")
+            .unwrap(),
+    );
+    header_span.pb_set_length(image_entries.len() as u64);
+    header_span.pb_set_message("Processing");
+    let _header_guard = header_span.enter();
+    for path in image_entries {
+        let sem = Arc::clone(&sem);
+        let valid_id = Arc::clone(&valid_id);
+        let image_output_path = image_output_path.clone();
+
+        threads.spawn(
+            async move {
+                let _permit = sem.acquire().await.unwrap();
+                let img = imgcodecs::imread(&path.to_str().unwrap(), imgcodecs::IMREAD_UNCHANGED)
+                    .unwrap();
+
+                let img = BoxedRef::from(img);
+                if valid_id
+                    .read()
+                    .unwrap()
+                    .contains(&path.file_stem().unwrap().to_str().unwrap().to_string())
+                {
+                    imgcodecs::imwrite(
+                        &format!(
+                            "{}//{}.{}",
+                            image_output_path,
+                            path.file_stem().unwrap().to_str().unwrap(),
+                            path.extension().unwrap().to_str().unwrap(),
+                        ),
+                        &img,
+                        &core::Vector::new(),
+                    )
+                    .unwrap();
+                }
+                Span::current()
+                    .pb_set_message(&format!("{}", path.file_name().unwrap().to_str().unwrap()));
+                Span::current().pb_inc(1);
+            }
+            .in_current_span(),
+        );
+    }
+    while threads.join_next().await.is_some() {}
+    drop(_header_guard);
+    drop(header_span);
+    tracing::info!("Images filter done");
+}
+
 pub async fn split_images_with_filter(
     image_path: &String,
     label_path: &String,

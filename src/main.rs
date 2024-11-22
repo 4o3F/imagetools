@@ -1,6 +1,6 @@
 use std::sync::{LazyLock, RwLock};
 
-use clap::{Parser, Subcommand};
+use clap::{ArgAction, Parser, Subcommand};
 use common::operation::EdgePosition;
 use tracing::level_filters::LevelFilter;
 use tracing_indicatif::IndicatifLayer;
@@ -136,11 +136,28 @@ enum CommonCommands {
         #[arg(long = "width", help = "Width for each split")]
         target_width: u32,
 
-        #[arg(short, help = "Use valid RGB filter mode", default_value = "true")]
+        #[arg(short, help = "Use valid RGB filter mode", default_value = "false", action = ArgAction::SetTrue)]
         valid_rgb_mode: bool,
 
         #[arg(short, help = "Skip label processing", default_value = "false")]
         skip_label_process: bool,
+    },
+
+    /// Filter dataset with RGB list
+    #[command(name = "filter-dataset-with-rgblist")]
+    FilterDatasetWithRGBList {
+        #[arg(
+            short,
+            long,
+            help = "The path for the folder containing dataset, should contain images and labels folders"
+        )]
+        dataset_path: String,
+
+        #[arg(short, long, help = "RGB list, in R0,G0,B0;R1,G1,B1 format")]
+        rgb_list: String,
+
+        #[arg(short, help = "Use valid RGB filter mode", default_value = "false", action = ArgAction::SetTrue)]
+        valid_rgb_mode: bool,
     },
 
     /// Map 8 bit grayscale PNG class image to RGB image
@@ -502,6 +519,18 @@ async fn main() {
                 )
                 .await;
             }
+            CommonCommands::FilterDatasetWithRGBList {
+                dataset_path,
+                rgb_list,
+                valid_rgb_mode,
+            } => {
+                common::augment::filter_dataset_with_rgblist(
+                    dataset_path,
+                    rgb_list,
+                    *valid_rgb_mode,
+                )
+                .await;
+            }
             CommonCommands::StichImages {
                 image_output_path,
                 target_height,
@@ -547,7 +576,10 @@ async fn main() {
             } => {
                 common::dataset::generate_dataset_json(dataset_path, train_ratio);
             }
-            CommonCommands::CombineDatasetJSON { dataset_path, save_path } => {
+            CommonCommands::CombineDatasetJSON {
+                dataset_path,
+                save_path,
+            } => {
                 common::dataset::combine_dataset_json(dataset_path, save_path);
             }
             CommonCommands::GenerateDatasetList {
