@@ -208,7 +208,7 @@ pub fn combine_dataset_json(dataset_path: &Vec<String>, save_path: &String) {
     fs::write(save_path.join("val.json"), combined_val_datas).expect_or_log("Failed to write");
 }
 
-pub async fn generate_dataset_list(dataset_path: &String, train_ratio: &f32) {
+pub async fn generate_dataset_txt(dataset_path: &String, train_ratio: &f32) {
     // Check dataset_path contain images and labels folder
 
     let dataset_path = PathBuf::from(dataset_path);

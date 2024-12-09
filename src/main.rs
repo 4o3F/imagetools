@@ -264,6 +264,24 @@ enum CommonCommands {
         train_ratio: f32,
     },
 
+    /// Split dataset into train and test sets and save file names to txt file
+    #[command(name = "generate-dataset-txt")]
+    GenerateDatasetTXT {
+        #[arg(
+            short,
+            long,
+            help = "The path for the dataset root folder, should contain images and labels folders"
+        )]
+        dataset_path: String,
+
+        #[arg(
+            short,
+            long,
+            help = "The ratio of train set, should be between 0 and 1"
+        )]
+        train_ratio: f32,
+    },
+
     /// Combine multiple JSON format dataset list compatible with huggingface dataset library
     #[command(name = "combine-dataset-json")]
     CombineDatasetJSON {
@@ -280,23 +298,6 @@ enum CommonCommands {
 
     /// Split dataset into train and test sets inplace
     SplitDataset {
-        #[arg(
-            short,
-            long,
-            help = "The path for the dataset root folder, should contain images and labels folders"
-        )]
-        dataset_path: String,
-
-        #[arg(
-            short,
-            long,
-            help = "The ratio of train set, should be between 0 and 1"
-        )]
-        train_ratio: f32,
-    },
-
-    /// Split dataset into train and test sets and save file names to txt file
-    GenerateDatasetList {
         #[arg(
             short,
             long,
@@ -582,11 +583,11 @@ async fn main() {
             } => {
                 common::dataset::combine_dataset_json(dataset_path, save_path);
             }
-            CommonCommands::GenerateDatasetList {
+            CommonCommands::GenerateDatasetTXT {
                 dataset_path,
                 train_ratio,
             } => {
-                common::dataset::generate_dataset_list(dataset_path, train_ratio).await;
+                common::dataset::generate_dataset_txt(dataset_path, train_ratio).await;
             }
             CommonCommands::SplitDataset {
                 dataset_path,

@@ -223,6 +223,9 @@ pub async fn split_images_with_bias(
 
     for entry in entries {
         let entry = entry.unwrap();
+        if entry.path().is_dir() {
+            continue;
+        }
         let dataset_path = dataset_path.clone();
         let bias_step = *bias_step;
         let target_height = *target_height;
@@ -357,7 +360,7 @@ pub fn check_valid_pixel_count(
     img: &BoxedRef<'_, Mat>,
     rgb_list: &[core::Vec3b],
     mode: bool,
-) -> bool {
+) -> (bool, f64) {
     let count = Arc::new(Mutex::new(0));
     let size = img.size().unwrap();
     let (width, height) = (size.width, size.height);
@@ -384,23 +387,6 @@ pub fn check_valid_pixel_count(
         let mut count = count.lock();
         *count += row_count;
     });
-    // for y in 0..height {
-    //     for x in 0..width {
-    //         let pixel = img.at_2d::<core::Vec3b>(y, x).unwrap();
-    //         match mode {
-    //             true => {
-    //                 if rgb_list.contains(&pixel) {
-    //                     count += 1;
-    //                 }
-    //             }
-    //             false => {
-    //                 if !rgb_list.contains(&pixel) {
-    //                     count += 1;
-    //                 }
-    //             }
-    //         }
-    //     }
-    // }
 
     let count = *count.lock();
 
@@ -408,7 +394,7 @@ pub fn check_valid_pixel_count(
     // if ratio > 0.01 {
     //     tracing::info!("Valid ratio {}", ratio);
     // }
-    ratio > 0.01
+    (ratio > 0.01, ratio)
 }
 
 pub async fn filter_dataset_with_rgblist(
@@ -464,7 +450,7 @@ pub async fn filter_dataset_with_rgblist(
             .map(|e| e.unwrap().path())
             .collect();
 
-        image_output_path = format!("{}\\filtered\\", image_path.to_str().unwrap());
+        image_output_path = format!("{}\\filtered_images\\", image_path.to_str().unwrap());
     } else {
         image_entries = vec![image_path.clone()];
         image_output_path = format!(
@@ -479,7 +465,7 @@ pub async fn filter_dataset_with_rgblist(
             .map(|e| e.unwrap().path())
             .collect();
 
-        label_output_path = format!("{}\\filtered\\", label_path.to_str().unwrap());
+        label_output_path = format!("{}\\filtered_labels\\", label_path.to_str().unwrap());
     } else {
         label_entries = vec![label_path.clone()];
         label_output_path = format!(
@@ -553,7 +539,8 @@ pub async fn filter_dataset_with_rgblist(
                     .unwrap();
                 let img = BoxedRef::from(img);
                 let rgb_list = rgb_list.read().unwrap();
-                if check_valid_pixel_count(&img, &rgb_list, valid_rgb_mode) {
+                let (valid, _) = check_valid_pixel_count(&img, &rgb_list, valid_rgb_mode);
+                if valid {
                     valid_id
                         .write()
                         .unwrap()
@@ -797,7 +784,7 @@ pub async fn split_images_with_filter(
                         .unwrap();
 
                         let rgb_list = rgb_list.read().unwrap();
-                        if check_valid_pixel_count(&cropped, &rgb_list, valid_rgb_mode) {
+                        if check_valid_pixel_count(&cropped, &rgb_list, valid_rgb_mode).0 {
                             imgcodecs::imwrite(
                                 &format!(
                                     "{}\\{}.{}",
@@ -841,7 +828,7 @@ pub async fn split_images_with_filter(
                         )
                         .unwrap();
                         let rgb_list = rgb_list.read().unwrap();
-                        if check_valid_pixel_count(&cropped, &rgb_list, valid_rgb_mode) {
+                        if check_valid_pixel_count(&cropped, &rgb_list, valid_rgb_mode).0 {
                             imgcodecs::imwrite(
                                 &format!(
                                     "{}\\{}.{}",

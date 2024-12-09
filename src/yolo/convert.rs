@@ -19,12 +19,13 @@ pub async fn rgb2yolo(dataset_path: &String, rgb_list: &str) {
     // color_class_map.insert(Rgb([0, 0, 255]), 5);
     // color_class_map.insert(Rgb([255, 255, 255]), 6);
 
-    // color_class_map.insert(Rgb([0, 255, 0]), 0);
-    // color_class_map.insert(Rgb([255, 255, 0]), 1);
-    // color_class_map.insert(Rgb([255, 0, 255]), 2);
-    // color_class_map.insert(Rgb([0, 255, 255]), 3);
-    // color_class_map.insert(Rgb([0, 0, 255]), 4);
-    // color_class_map.insert(Rgb([255, 255, 255]), 5);
+    // YRCC_MS without land
+    color_class_map.insert(Rgb([0, 255, 0]), 0);
+    color_class_map.insert(Rgb([255, 255, 0]), 1);
+    color_class_map.insert(Rgb([255, 0, 255]), 2);
+    color_class_map.insert(Rgb([0, 255, 255]), 3);
+    color_class_map.insert(Rgb([0, 0, 255]), 4);
+    color_class_map.insert(Rgb([255, 255, 255]), 5);
 
     // YRCC_ORI
     // color_class_map.insert(Rgb([0, 255, 255]), 0); // ice
@@ -80,23 +81,12 @@ pub async fn rgb2yolo(dataset_path: &String, rgb_list: &str) {
                 let img: image::ImageBuffer<Rgb<u8>, Vec<u8>> =
                     image::open(entry.path()).unwrap().into_rgb8();
 
-                // 只有卫星数据需要筛选
-                // if !crate::images::check_valid_pixel_count(&img) {
-                //     return ();
-                // }
-
                 let mut labels = Vec::<String>::new();
                 for (color, class_id) in color_class_map.clone().iter() {
-                    // Output image for this class
-                    // let mut output_img = img.clone();
-                    // TODO: remove this test only code
-                    // if color != &Rgb([0, 255, 0]) {
-                    //     continue;
-                    // }
 
                     let mut mat = opencv::core::Mat::new_rows_cols_with_default(
-                        768,
-                        768,
+                        512,
+                        512,
                         opencv::core::CV_8U,
                         opencv::core::Scalar::all(0.),
                     )
