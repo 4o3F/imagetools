@@ -122,10 +122,7 @@ enum CommonCommands {
     /// Split large images to small pieces with a filter for enough valid pixels
     SplitImagesWithFilter {
         #[arg(short, long, help = "The path for the folder containing images")]
-        image_path: String,
-
-        #[arg(short, long, help = "The path for the folder containing labels")]
-        label_path: String,
+        images_path: String,
 
         #[arg(short, long, help = "RGB list, in R0,G0,B0;R1,G1,B1 format")]
         rgb_list: String,
@@ -138,9 +135,6 @@ enum CommonCommands {
 
         #[arg(short, help = "Use valid RGB filter mode", default_value = "false", action = ArgAction::SetTrue)]
         valid_rgb_mode: bool,
-
-        #[arg(short, help = "Skip label processing", default_value = "false")]
-        skip_label_process: bool,
     },
 
     /// Filter dataset with RGB list
@@ -449,6 +443,8 @@ async fn main() {
         .write()
         .expect_or_log("Get thread pool lock failed") = cli.thread;
 
+    tracing::info!("Using {} threads", cli.thread);
+
     match &cli.command {
         Some(Commands::Common { command }) => match command {
             CommonCommands::CropRectangle {
@@ -501,22 +497,18 @@ async fn main() {
                 .await;
             }
             CommonCommands::SplitImagesWithFilter {
-                image_path,
-                label_path,
+                images_path,
                 target_height,
                 target_width,
                 rgb_list,
                 valid_rgb_mode,
-                skip_label_process,
             } => {
                 common::augment::split_images_with_filter(
-                    image_path,
-                    label_path,
+                    images_path,
                     target_height,
                     target_width,
                     rgb_list,
                     *valid_rgb_mode,
-                    *skip_label_process,
                 )
                 .await;
             }

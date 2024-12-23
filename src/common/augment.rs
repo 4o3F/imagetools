@@ -625,13 +625,11 @@ pub async fn filter_dataset_with_rgblist(
 }
 
 pub async fn split_images_with_filter(
-    image_path: &String,
-    label_path: &String,
+    images_path: &String,
     target_height: &u32,
     target_width: &u32,
     rgb_list_str: &str,
     valid_rgb_mode: bool,
-    skip_label_processing: bool,
 ) {
     let rgb_list: Arc<RwLock<Vec<core::Vec3b>>> = Arc::new(RwLock::new(Vec::new()));
     for rgb in rgb_list_str.split(";") {
@@ -652,33 +650,11 @@ pub async fn split_images_with_filter(
         }
     );
 
-    let image_entries: Vec<PathBuf>;
     let label_entries: Vec<PathBuf>;
 
-    let image_output_path: String;
     let label_output_path: String;
 
-    let image_path = PathBuf::from(image_path.as_str());
-    let label_path = PathBuf::from(label_path.as_str());
-    if label_path.is_dir() ^ image_path.is_dir() {
-        tracing::error!("Image and label path should be both directories or both files");
-        return ();
-    }
-
-    if image_path.is_dir() {
-        image_entries = fs::read_dir(&image_path)
-            .unwrap()
-            .map(|e| e.unwrap().path())
-            .collect();
-
-        image_output_path = format!("{}\\output\\", image_path.to_str().unwrap());
-    } else {
-        image_entries = vec![image_path.clone()];
-        image_output_path = format!(
-            "{}\\output\\images\\",
-            image_path.parent().unwrap().to_str().unwrap()
-        );
-    }
+    let label_path = PathBuf::from(images_path.as_str());
 
     if label_path.is_dir() {
         label_entries = fs::read_dir(&label_path)
@@ -698,22 +674,9 @@ pub async fn split_images_with_filter(
     let sem = Arc::new(Semaphore::new(
         (*THREAD_POOL.read().expect_or_log("Get pool error")).into(),
     ));
-    let valid_id = Arc::new(RwLock::new(Vec::<String>::new()));
+    tracing::info!("sem available permits: {}", sem.available_permits());
     let mut threads = tokio::task::JoinSet::new();
 
-    match fs::create_dir_all(&image_output_path) {
-        Ok(_) => {
-            tracing::info!("Image output directory created");
-        }
-        Err(e) => {
-            if e.kind() == std::io::ErrorKind::AlreadyExists {
-                tracing::info!("Image output directory already exists");
-            } else {
-                tracing::error!("Failed to create directory: {}", e);
-                return ();
-            }
-        }
-    }
     match fs::create_dir_all(&label_output_path) {
         Ok(_) => {
             tracing::info!("Label output directory created");
@@ -729,197 +692,48 @@ pub async fn split_images_with_filter(
     }
 
     // Label Processing
-    if !skip_label_processing {
-        let mut label_extension = None;
-        for entry in label_entries {
-            if !entry.is_file() {
-                continue;
-            }
-
-            if label_extension.is_none() {
-                let extension = entry
-                    .extension()
-                    .unwrap()
-                    .to_os_string()
-                    .into_string()
-                    .unwrap();
-                label_extension = Some(extension);
-            }
-
-            let permit = Arc::clone(&sem);
-            let valid_id = Arc::clone(&valid_id);
-            let target_width = *target_width;
-            let target_height = *target_height;
-            let rgb_list = Arc::clone(&rgb_list);
-            let label_extension = label_extension.clone();
-
-            let label_output_path = label_output_path.clone();
-            threads.spawn(async move {
-                let _ = permit.acquire().await.unwrap();
-                let label_id = entry.file_stem().unwrap().to_str().unwrap().to_string();
-                let img = imgcodecs::imread(entry.to_str().unwrap(), imgcodecs::IMREAD_UNCHANGED)
-                    .unwrap();
-
-                let size = img.size().unwrap();
-                let (width, height) = (size.width, size.height);
-                let y_count = height / target_height as i32;
-                let x_count = width / target_width as i32;
-                // let mut labels_map = HashMap::<String, Mat>::new();
-
-                // Crop horizontally from left
-                let row_iter = ProgressAdaptor::new(0..y_count);
-                let row_progress = row_iter.items_processed();
-                row_iter.for_each(|row_index| {
-                    for col_index in 0..x_count {
-                        let label_id = format!("{}_LTR_x{}_y{}", label_id, col_index, row_index);
-                        let cropped = core::Mat::roi(
-                            &img,
-                            core::Rect::new(
-                                col_index * target_width as i32,
-                                row_index * target_height as i32,
-                                target_width as i32,
-                                target_height as i32,
-                            ),
-                        )
-                        .unwrap();
-
-                        let rgb_list = rgb_list.read().unwrap();
-                        if check_valid_pixel_count(&cropped, &rgb_list, valid_rgb_mode).0 {
-                            imgcodecs::imwrite(
-                                &format!(
-                                    "{}\\{}.{}",
-                                    label_output_path,
-                                    label_id,
-                                    label_extension.as_ref().unwrap()
-                                ),
-                                &cropped,
-                                &core::Vector::new(),
-                            )
-                            .unwrap();
-                            valid_id.write().unwrap().push(label_id.clone());
-                        }
-                    }
-                    if row_progress.get() != 0 && row_progress.get() % 10 == 0 {
-                        tracing::info!(
-                            "Label {} LTR Row {} / {} done",
-                            label_id,
-                            row_progress.get(),
-                            y_count
-                        );
-                    }
-                });
-
-                tracing::info!("Label {} LTR iteration done", label_id);
-
-                // Crop horizontally from right
-                let row_iter = ProgressAdaptor::new(0..y_count);
-                let row_progress = row_iter.items_processed();
-                row_iter.for_each(|row_index| {
-                    for col_index in 0..x_count {
-                        let label_id = format!("{}_RTL_x{}_y{}", label_id, col_index, row_index);
-                        let cropped = core::Mat::roi(
-                            &img,
-                            core::Rect::new(
-                                width - (col_index + 1) * target_width as i32,
-                                height - (row_index + 1) * target_height as i32,
-                                target_width as i32,
-                                target_height as i32,
-                            ),
-                        )
-                        .unwrap();
-                        let rgb_list = rgb_list.read().unwrap();
-                        if check_valid_pixel_count(&cropped, &rgb_list, valid_rgb_mode).0 {
-                            imgcodecs::imwrite(
-                                &format!(
-                                    "{}\\{}.{}",
-                                    label_output_path,
-                                    label_id,
-                                    label_extension.as_ref().unwrap()
-                                ),
-                                &cropped,
-                                &core::Vector::new(),
-                            )
-                            .unwrap();
-                            valid_id.write().unwrap().push(label_id.clone());
-                        }
-                    }
-                    if row_progress.get() != 0 && row_progress.get() % 10 == 0 {
-                        tracing::info!(
-                            "Label {} RTL Row {} / {} done",
-                            label_id,
-                            row_progress.get(),
-                            y_count
-                        );
-                    }
-                });
-                tracing::info!("Label {} RTL iteration done", label_id);
-
-                tracing::info!("Label {} process done", label_id);
-            });
-        }
-
-        while threads.join_next().await.is_some() {}
-    } else {
-        tracing::info!("Skipping label processing, reading valid labels");
-        for path in fs::read_dir(label_output_path).unwrap() {
-            let path = path.unwrap().path();
-            valid_id
-                .write()
-                .unwrap()
-                .push(path.file_stem().unwrap().to_str().unwrap().to_string());
-        }
-        tracing::info!("Labels read done");
-    }
-    tracing::info!(
-        "Labels process done, total {} valid labels",
-        valid_id.read().unwrap().len()
-    );
-
-    let mut image_extension = None;
-    for entry in image_entries {
+    let mut label_extension = None;
+    for entry in label_entries {
         if !entry.is_file() {
             continue;
         }
 
-        if image_extension.is_none() {
+        if label_extension.is_none() {
             let extension = entry
                 .extension()
                 .unwrap()
                 .to_os_string()
                 .into_string()
                 .unwrap();
-            image_extension = Some(extension);
+            label_extension = Some(extension);
         }
 
         let permit = Arc::clone(&sem);
-        // let cropped_images = Arc::clone(&cropped_images);
-        let valid_id = Arc::clone(&valid_id);
-        let target_height = *target_height;
         let target_width = *target_width;
-        let image_extension = image_extension.clone();
-        let image_output_path = image_output_path.clone();
+        let target_height = *target_height;
+        let rgb_list = Arc::clone(&rgb_list);
+        let label_extension = label_extension.clone();
+
+        let label_output_path = label_output_path.clone();
         threads.spawn(async move {
             let _ = permit.acquire().await.unwrap();
-            let img_id = entry.file_stem().unwrap().to_str().unwrap().to_string();
-            let img =
-                imgcodecs::imread(entry.to_str().unwrap(), imgcodecs::IMREAD_UNCHANGED).unwrap();
+            tracing::info!("Processing {}", entry.file_name().unwrap().to_str().unwrap());
+            let label_id = entry.file_stem().unwrap().to_str().unwrap().to_string();
+            let img = imgcodecs::imread(entry.to_str().unwrap(), imgcodecs::IMREAD_UNCHANGED)
+                .unwrap();
 
             let size = img.size().unwrap();
             let (width, height) = (size.width, size.height);
             let y_count = height / target_height as i32;
             let x_count = width / target_width as i32;
+            // let mut labels_map = HashMap::<String, Mat>::new();
 
             // Crop horizontally from left
             let row_iter = ProgressAdaptor::new(0..y_count);
             let row_progress = row_iter.items_processed();
-
             row_iter.for_each(|row_index| {
                 for col_index in 0..x_count {
-                    let img_id = format!("{}_LTR_x{}_y{}", img_id, col_index, row_index);
-                    if !valid_id.read().unwrap().contains(&img_id) {
-                        // tracing::trace!("Skipping {}", img_id);
-                        continue;
-                    }
+                    let label_id = format!("{}_LTR_x{}_y{}", label_id, col_index, row_index);
                     let cropped = core::Mat::roi(
                         &img,
                         core::Rect::new(
@@ -930,41 +744,40 @@ pub async fn split_images_with_filter(
                         ),
                     )
                     .unwrap();
-                    imgcodecs::imwrite(
-                        &format!(
-                            "{}\\{}.{}",
-                            image_output_path,
-                            img_id,
-                            image_extension.as_ref().unwrap()
-                        ),
-                        &cropped,
-                        &core::Vector::new(),
-                    )
-                    .unwrap();
+
+                    let rgb_list = rgb_list.read().unwrap();
+                    if check_valid_pixel_count(&cropped, &rgb_list, valid_rgb_mode).0 {
+                        imgcodecs::imwrite(
+                            &format!(
+                                "{}\\{}.{}",
+                                label_output_path,
+                                label_id,
+                                label_extension.as_ref().unwrap()
+                            ),
+                            &cropped,
+                            &core::Vector::new(),
+                        )
+                        .unwrap();
+                    }
                 }
                 if row_progress.get() != 0 && row_progress.get() % 10 == 0 {
                     tracing::info!(
-                        "Image {} LTR Row {} / {} done",
-                        img_id,
+                        "Label {} LTR Row {} / {} done",
+                        label_id,
                         row_progress.get(),
                         y_count
                     );
                 }
             });
 
-            tracing::info!("Image {} RTL iteration done", img_id);
+            tracing::info!("Label {} LTR iteration done", label_id);
 
             // Crop horizontally from right
             let row_iter = ProgressAdaptor::new(0..y_count);
             let row_progress = row_iter.items_processed();
-
             row_iter.for_each(|row_index| {
                 for col_index in 0..x_count {
-                    let img_id = format!("{}_RTL_x{}_y{}", img_id, col_index, row_index);
-                    if !valid_id.read().unwrap().contains(&img_id) {
-                        // tracing::trace!("Skipping {}", img_id);
-                        continue;
-                    }
+                    let label_id = format!("{}_RTL_x{}_y{}", label_id, col_index, row_index);
                     let cropped = core::Mat::roi(
                         &img,
                         core::Rect::new(
@@ -975,31 +788,33 @@ pub async fn split_images_with_filter(
                         ),
                     )
                     .unwrap();
-                    imgcodecs::imwrite(
-                        &format!(
-                            "{}\\{}.{}",
-                            image_output_path,
-                            img_id,
-                            image_extension.as_ref().unwrap()
-                        ),
-                        &cropped,
-                        &core::Vector::new(),
-                    )
-                    .unwrap();
+                    let rgb_list = rgb_list.read().unwrap();
+                    if check_valid_pixel_count(&cropped, &rgb_list, valid_rgb_mode).0 {
+                        imgcodecs::imwrite(
+                            &format!(
+                                "{}\\{}.{}",
+                                label_output_path,
+                                label_id,
+                                label_extension.as_ref().unwrap()
+                            ),
+                            &cropped,
+                            &core::Vector::new(),
+                        )
+                        .unwrap();
+                    }
                 }
                 if row_progress.get() != 0 && row_progress.get() % 10 == 0 {
                     tracing::info!(
-                        "Image {} RTL Row {} / {} done",
-                        img_id,
+                        "Label {} RTL Row {} / {} done",
+                        label_id,
                         row_progress.get(),
                         y_count
                     );
                 }
             });
+            tracing::info!("Label {} RTL iteration done", label_id);
 
-            tracing::info!("Image {} LTR iteration done", img_id);
-
-            tracing::info!("Image {} process done", img_id);
+            tracing::info!("Label {} process done", label_id);
         });
     }
 
