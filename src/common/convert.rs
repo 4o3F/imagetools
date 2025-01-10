@@ -155,7 +155,7 @@ pub async fn rgb2rle(dataset_path: &String, rgb_list: &str) {
     let dataset_guard = dataset.lock().unwrap();
     let dataset_string = serde_json::to_string(&*dataset_guard).unwrap();
     fs::write(
-        format!("{}\\resized_labels.json", dataset_path),
+        format!("{}/resized_labels.json", dataset_path),
         dataset_string,
     )
     .unwrap();

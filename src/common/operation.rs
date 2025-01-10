@@ -20,7 +20,7 @@ pub async fn resize_images(
     if dataset_path.is_file() {
         entries.push(dataset_path.clone());
         fs::create_dir_all(format!(
-            "{}\\output\\",
+            "{}/output/",
             dataset_path.parent().unwrap().to_str().unwrap()
         ))
         .expect_or_log("Failed to create directory");
@@ -30,7 +30,7 @@ pub async fn resize_images(
             .map(|x| x.unwrap().path())
             .collect();
 
-        fs::create_dir_all(format!("{}\\output\\", dataset_path.to_str().unwrap()))
+        fs::create_dir_all(format!("{}/output/", dataset_path.to_str().unwrap()))
             .expect_or_log("Failed to create directory");
     }
 
@@ -80,7 +80,7 @@ pub async fn resize_images(
 
             imwrite(
                 format!(
-                    "{}\\output\\{}",
+                    "{}/output/{}",
                     entry.parent().unwrap().to_str().unwrap(),
                     entry.file_name().unwrap().to_str().unwrap()
                 )
@@ -184,7 +184,7 @@ pub fn crop_rectangle_region(source_path: &String, target_path: &String, corners
 pub fn normalize(dataset_path: &String, target_max: &f64, target_min: &f64) {
     let entries = fs::read_dir(dataset_path).expect_or_log("Failed to read directory");
 
-    fs::create_dir_all(format!("{}\\output\\", dataset_path))
+    fs::create_dir_all(format!("{}/output/", dataset_path))
         .expect_or_log("Failed to create directory");
 
     for entry in entries {
@@ -221,7 +221,7 @@ pub fn normalize(dataset_path: &String, target_max: &f64, target_min: &f64) {
         .expect_or_log("Failed to normalize");
 
         let dst_path = format!(
-            "{}\\output\\{}",
+            "{}/output/{}",
             dataset_path,
             entry
                 .path()

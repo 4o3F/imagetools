@@ -23,7 +23,7 @@ pub async fn split_images(dataset_path: &String, target_height: &u32, target_wid
     if dataset_path.is_file() {
         entries.push(dataset_path.clone());
         fs::create_dir_all(format!(
-            "{}\\output\\",
+            "{}/output/",
             dataset_path.parent().unwrap().to_str().unwrap()
         ))
         .expect_or_log("Failed to create directory");
@@ -33,7 +33,7 @@ pub async fn split_images(dataset_path: &String, target_height: &u32, target_wid
             .map(|x| x.unwrap().path())
             .collect();
 
-        fs::create_dir_all(format!("{}\\output\\", dataset_path.to_str().unwrap()))
+        fs::create_dir_all(format!("{}/output/", dataset_path.to_str().unwrap()))
             .expect_or_log("Failed to create directory");
     }
     let mut threads = JoinSet::new();
@@ -118,7 +118,7 @@ pub async fn split_images(dataset_path: &String, target_height: &u32, target_wid
                     )
                     .expect_or_log("Failed to crop image");
                     let path = format!(
-                        "{}\\output\\{}_LTR_x{}_y{}.{}",
+                        "{}/output/{}_LTR_x{}_y{}.{}",
                         entry.parent().unwrap().to_str().unwrap(),
                         file_stem,
                         x_index,
@@ -171,7 +171,7 @@ pub async fn split_images(dataset_path: &String, target_height: &u32, target_wid
                     )
                     .expect_or_log("Failed to crop image");
                     let path = format!(
-                        "{}\\output\\{}_RTL_x{}_y{}.{}",
+                        "{}/output/{}_RTL_x{}_y{}.{}",
                         entry.parent().unwrap().to_str().unwrap(),
                         file_stem,
                         x_index,
@@ -219,7 +219,7 @@ pub async fn split_images_with_bias(
     let entries = fs::read_dir(dataset_path).unwrap();
     let mut threads = JoinSet::new();
 
-    fs::create_dir_all(format!("{}\\..\\output\\", dataset_path)).unwrap();
+    fs::create_dir_all(format!("{}/../output/", dataset_path)).unwrap();
 
     for entry in entries {
         let entry = entry.unwrap();
@@ -272,7 +272,7 @@ pub async fn split_images_with_bias(
                         .unwrap();
                         imgcodecs::imwrite(
                             format!(
-                                "{}\\..\\output\\{}_LTR_bias{}_x{}_y{}.{}",
+                                "{}/../output/{}_LTR_bias{}_x{}_y{}.{}",
                                 dataset_path,
                                 entry.path().file_stem().unwrap().to_str().unwrap(),
                                 bias,
@@ -328,7 +328,7 @@ pub async fn split_images_with_bias(
                         .unwrap();
                         imgcodecs::imwrite(
                             format!(
-                                "{}\\..\\output\\{}_RTL_bias{}_x{}_y{}.{}",
+                                "{}/../output/{}_RTL_bias{}_x{}_y{}.{}",
                                 dataset_path,
                                 entry.path().file_stem().unwrap().to_str().unwrap(),
                                 bias,
@@ -450,11 +450,11 @@ pub async fn filter_dataset_with_rgblist(
             .map(|e| e.unwrap().path())
             .collect();
 
-        image_output_path = format!("{}\\filtered_images\\", image_path.to_str().unwrap());
+        image_output_path = format!("{}/filtered_images/", image_path.to_str().unwrap());
     } else {
         image_entries = vec![image_path.clone()];
         image_output_path = format!(
-            "{}\\filtered\\images\\",
+            "{}/filtered/images/",
             image_path.parent().unwrap().to_str().unwrap()
         );
     }
@@ -465,11 +465,11 @@ pub async fn filter_dataset_with_rgblist(
             .map(|e| e.unwrap().path())
             .collect();
 
-        label_output_path = format!("{}\\filtered_labels\\", label_path.to_str().unwrap());
+        label_output_path = format!("{}/filtered_labels/", label_path.to_str().unwrap());
     } else {
         label_entries = vec![label_path.clone()];
         label_output_path = format!(
-            "{}\\filtered\\labels\\",
+            "{}/filtered/labels/",
             label_path.parent().unwrap().to_str().unwrap()
         );
     }
@@ -662,11 +662,11 @@ pub async fn split_images_with_filter(
             .map(|e| e.unwrap().path())
             .collect();
 
-        label_output_path = format!("{}\\output\\", label_path.to_str().unwrap());
+        label_output_path = format!("{}/output/", label_path.to_str().unwrap());
     } else {
         label_entries = vec![label_path.clone()];
         label_output_path = format!(
-            "{}\\output\\labels\\",
+            "{}/output/labels/",
             label_path.parent().unwrap().to_str().unwrap()
         );
     }
@@ -749,7 +749,7 @@ pub async fn split_images_with_filter(
                     if check_valid_pixel_count(&cropped, &rgb_list, valid_rgb_mode).0 {
                         imgcodecs::imwrite(
                             &format!(
-                                "{}\\{}.{}",
+                                "{}/{}.{}",
                                 label_output_path,
                                 label_id,
                                 label_extension.as_ref().unwrap()
@@ -792,7 +792,7 @@ pub async fn split_images_with_filter(
                     if check_valid_pixel_count(&cropped, &rgb_list, valid_rgb_mode).0 {
                         imgcodecs::imwrite(
                             &format!(
-                                "{}\\{}.{}",
+                                "{}/{}.{}",
                                 label_output_path,
                                 label_id,
                                 label_extension.as_ref().unwrap()
@@ -906,7 +906,7 @@ pub async fn stich_images(splited_images: &String, target_height: &i32, target_w
     }
 
     imgcodecs::imwrite(
-        format!("{}\\stiched.png", splited_images).as_str(),
+        format!("{}/stiched.png", splited_images).as_str(),
         &result_mat,
         &core::Vector::new(),
     )

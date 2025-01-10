@@ -255,19 +255,19 @@ pub async fn generate_dataset_txt(dataset_path: &String, train_ratio: &f32) {
 
     let dataset_path = dataset_path.to_str().unwrap();
     fs::write(
-        format!("{}\\..\\val.txt", dataset_path),
+        format!("{}/../val.txt", dataset_path),
         valid_data.concat(),
     )
     .unwrap();
     fs::write(
-        format!("{}\\..\\train.txt", dataset_path),
+        format!("{}/../train.txt", dataset_path),
         train_data.concat(),
     )
     .unwrap();
     tracing::info!("Train dataset length: {}", train_data.len());
-    tracing::info!("Saved to {}\\..\\train.txt", dataset_path);
+    tracing::info!("Saved to {}/../train.txt", dataset_path);
     tracing::info!("Valid dataset length: {}", valid_data.len());
-    tracing::info!("Saved to {}\\..\\val.txt", dataset_path);
+    tracing::info!("Saved to {}/../val.txt", dataset_path);
     tracing::info!("Dataset split done");
 }
 

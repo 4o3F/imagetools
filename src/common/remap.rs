@@ -40,7 +40,7 @@ pub async fn remap_color(original_color: &str, new_color: &str, dataset_path: &S
     if dataset_path.is_file() {
         entries.push(dataset_path.clone());
         fs::create_dir_all(format!(
-            "{}\\output\\",
+            "{}/output/",
             dataset_path.parent().unwrap().to_str().unwrap()
         ))
         .expect_or_log("Failed to create directory");
@@ -49,7 +49,7 @@ pub async fn remap_color(original_color: &str, new_color: &str, dataset_path: &S
             .unwrap()
             .map(|x| x.unwrap().path())
             .collect();
-        fs::create_dir_all(format!("{}\\output\\", dataset_path.to_str().unwrap()))
+        fs::create_dir_all(format!("{}/output/", dataset_path.to_str().unwrap()))
             .expect_or_log("Failed to create directory");
     }
 
@@ -108,7 +108,7 @@ pub async fn remap_color(original_color: &str, new_color: &str, dataset_path: &S
 
             imwrite(
                 format!(
-                    "{}\\output\\{}",
+                    "{}/output/{}",
                     entry.parent().unwrap().to_str().unwrap(),
                     entry.file_name().unwrap().to_str().unwrap()
                 )
@@ -162,7 +162,7 @@ pub async fn remap_background_color(valid_colors: &str, new_color: &str, dataset
     if dataset_path.is_file() {
         entries.push(dataset_path.clone());
         fs::create_dir_all(format!(
-            "{}\\output\\",
+            "{}/output/",
             dataset_path.parent().unwrap().to_str().unwrap()
         ))
         .expect_or_log("Failed to create directory");
@@ -171,7 +171,7 @@ pub async fn remap_background_color(valid_colors: &str, new_color: &str, dataset
             .unwrap()
             .map(|x| x.unwrap().path())
             .collect();
-        fs::create_dir_all(format!("{}\\output\\", dataset_path.to_str().unwrap()))
+        fs::create_dir_all(format!("{}/output/", dataset_path.to_str().unwrap()))
             .expect_or_log("Failed to create directory");
     }
 
@@ -228,7 +228,7 @@ pub async fn remap_background_color(valid_colors: &str, new_color: &str, dataset
 
             imwrite(
                 format!(
-                    "{}\\output\\{}",
+                    "{}/output/{}",
                     entry.parent().unwrap().to_str().unwrap(),
                     entry.file_name().unwrap().to_str().unwrap()
                 )
@@ -259,7 +259,7 @@ pub async fn class2rgb(dataset_path: &String, rgb_list: &str) {
     if dataset_path.is_file() {
         entries.push(dataset_path.clone());
         fs::create_dir_all(format!(
-            "{}\\output\\",
+            "{}/output/",
             dataset_path.parent().unwrap().to_str().unwrap()
         ))
         .expect_or_log("Failed to create directory");
@@ -268,7 +268,7 @@ pub async fn class2rgb(dataset_path: &String, rgb_list: &str) {
             .unwrap()
             .map(|x| x.unwrap().path())
             .collect();
-        fs::create_dir_all(format!("{}\\output\\", dataset_path.to_str().unwrap()))
+        fs::create_dir_all(format!("{}/output/", dataset_path.to_str().unwrap()))
             .expect_or_log("Failed to create directory");
     }
 
@@ -331,7 +331,7 @@ pub async fn class2rgb(dataset_path: &String, rgb_list: &str) {
 
                 imwrite(
                     format!(
-                        "{}\\output\\{}",
+                        "{}/output/{}",
                         entry.parent().unwrap().to_str().unwrap(),
                         entry.file_name().unwrap().to_str().unwrap()
                     )
@@ -360,7 +360,7 @@ pub async fn class2rgb(dataset_path: &String, rgb_list: &str) {
     std::mem::drop(header_span_enter);
     std::mem::drop(header_span);
     tracing::info!("All done");
-    tracing::info!("Saved to {}\\output\\", dataset_path.to_str().unwrap());
+    tracing::info!("Saved to {}/output/", dataset_path.to_str().unwrap());
 }
 
 pub async fn rgb2class(dataset_path: &String, rgb_list: &str) {
@@ -369,7 +369,7 @@ pub async fn rgb2class(dataset_path: &String, rgb_list: &str) {
     if dataset_path.is_file() {
         entries.push(dataset_path.clone());
         fs::create_dir_all(format!(
-            "{}\\output\\",
+            "{}/output/",
             dataset_path.parent().unwrap().to_str().unwrap()
         ))
         .expect_or_log("Failed to create directory");
@@ -379,7 +379,7 @@ pub async fn rgb2class(dataset_path: &String, rgb_list: &str) {
             .map(|x| x.unwrap().path())
             .filter(|x| x.is_file())
             .collect();
-        fs::create_dir_all(format!("{}\\output\\", dataset_path.to_str().unwrap()))
+        fs::create_dir_all(format!("{}/output/", dataset_path.to_str().unwrap()))
             .expect_or_log("Failed to create directory");
     }
 
@@ -447,7 +447,7 @@ pub async fn rgb2class(dataset_path: &String, rgb_list: &str) {
 
                 imwrite(
                     format!(
-                        "{}\\output\\{}",
+                        "{}/output/{}",
                         entry.parent().unwrap().to_str().unwrap(),
                         entry.file_name().unwrap().to_str().unwrap()
                     )
@@ -480,7 +480,7 @@ pub async fn rgb2class(dataset_path: &String, rgb_list: &str) {
 
     tracing::info!("All done");
     tracing::info!(
-        "Saved to {}\\output\\",
+        "Saved to {}/output/",
         dataset_path
             .parent()
             .expect_or_log("Get parent error")
