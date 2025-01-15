@@ -20,12 +20,12 @@ pub async fn rgb2yolo(dataset_path: &String, rgb_list: &str) {
     // color_class_map.insert(Rgb([255, 255, 255]), 6);
 
     // YRCC_MS without land
-    color_class_map.insert(Rgb([0, 255, 0]), 0);
-    color_class_map.insert(Rgb([255, 255, 0]), 1);
-    color_class_map.insert(Rgb([255, 0, 255]), 2);
-    color_class_map.insert(Rgb([0, 255, 255]), 3);
-    color_class_map.insert(Rgb([0, 0, 255]), 4);
-    color_class_map.insert(Rgb([255, 255, 255]), 5);
+    // color_class_map.insert(Rgb([0, 255, 0]), 0);
+    // color_class_map.insert(Rgb([255, 255, 0]), 1);
+    // color_class_map.insert(Rgb([255, 0, 255]), 2);
+    // color_class_map.insert(Rgb([0, 255, 255]), 3);
+    // color_class_map.insert(Rgb([0, 0, 255]), 4);
+    // color_class_map.insert(Rgb([255, 255, 255]), 5);
 
     // YRCC_ORI
     // color_class_map.insert(Rgb([0, 255, 255]), 0); // ice
