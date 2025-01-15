@@ -719,8 +719,10 @@ pub async fn split_images_with_filter(
             let _ = permit.acquire().await.unwrap();
             tracing::info!("Processing {}", entry.file_name().unwrap().to_str().unwrap());
             let label_id = entry.file_stem().unwrap().to_str().unwrap().to_string();
-            let img = imgcodecs::imread(entry.to_str().unwrap(), imgcodecs::IMREAD_UNCHANGED)
+            let img = imgcodecs::imread(entry.to_str().unwrap(), imgcodecs::IMREAD_COLOR)
                 .unwrap();
+
+            
 
             let size = img.size().unwrap();
             let (width, height) = (size.width, size.height);
