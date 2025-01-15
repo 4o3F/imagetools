@@ -85,8 +85,8 @@ pub async fn rgb2yolo(dataset_path: &String, rgb_list: &str) {
                 for (color, class_id) in color_class_map.clone().iter() {
 
                     let mut mat = opencv::core::Mat::new_rows_cols_with_default(
-                        512,
-                        512,
+                        768,
+                        768,
                         opencv::core::CV_8U,
                         opencv::core::Scalar::all(0.),
                     )
