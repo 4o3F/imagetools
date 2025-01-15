@@ -119,8 +119,9 @@ enum CommonCommands {
         target_width: u32,
     },
 
-    /// Split large images to small pieces with a filter for enough valid pixels
-    SplitImagesWithFilter {
+    /// Split label images to small pieces with a filter for enough valid pixels
+    #[command(name = "split-images-with-rgb-filter")]
+    SplitImagesWithRGBFilter {
         #[arg(short, long, help = "The path for the folder containing images")]
         images_path: String,
 
@@ -135,6 +136,26 @@ enum CommonCommands {
 
         #[arg(short, help = "Use valid RGB filter mode", default_value = "false", action = ArgAction::SetTrue)]
         valid_rgb_mode: bool,
+    },
+
+    /// Split images to small pieces with a filter for label name match
+    #[command(name = "split-images-with-label-filter")]
+    SplitImagesWithLabelFilter {
+        #[arg(short, long, help = "The path for the folder containing images")]
+        images_path: String,
+
+        #[arg(
+            short,
+            long,
+            help = "The path for the folder containing labels, should be same as images folder"
+        )]
+        labels_path: String,
+
+        #[arg(long = "height", help = "Height for each split")]
+        target_height: u32,
+
+        #[arg(long = "width", help = "Width for each split")]
+        target_width: u32,
     },
 
     /// Filter dataset with RGB list
@@ -496,19 +517,33 @@ async fn main() {
                 )
                 .await;
             }
-            CommonCommands::SplitImagesWithFilter {
+            CommonCommands::SplitImagesWithRGBFilter {
                 images_path,
                 target_height,
                 target_width,
                 rgb_list,
                 valid_rgb_mode,
             } => {
-                common::augment::split_images_with_filter(
+                common::augment::split_images_with_rgb_filter(
                     images_path,
                     target_height,
                     target_width,
                     rgb_list,
                     *valid_rgb_mode,
+                )
+                .await;
+            }
+            CommonCommands::SplitImagesWithLabelFilter {
+                images_path,
+                labels_path,
+                target_height,
+                target_width,
+            } => {
+                common::augment::split_images_with_label_filter(
+                    images_path,
+                    labels_path,
+                    target_height,
+                    target_width,
                 )
                 .await;
             }

@@ -1,4 +1,5 @@
 use std::{
+    collections::HashSet,
     fs::{self},
     path::PathBuf,
     sync::{Arc, RwLock},
@@ -624,7 +625,7 @@ pub async fn filter_dataset_with_rgblist(
     tracing::info!("Images filter done");
 }
 
-pub async fn split_images_with_filter(
+pub async fn split_images_with_rgb_filter(
     images_path: &String,
     target_height: &u32,
     target_width: &u32,
@@ -717,12 +718,12 @@ pub async fn split_images_with_filter(
         let label_output_path = label_output_path.clone();
         threads.spawn(async move {
             let _ = permit.acquire().await.unwrap();
-            tracing::info!("Processing {}", entry.file_name().unwrap().to_str().unwrap());
+            tracing::info!(
+                "Processing {}",
+                entry.file_name().unwrap().to_str().unwrap()
+            );
             let label_id = entry.file_stem().unwrap().to_str().unwrap().to_string();
-            let img = imgcodecs::imread(entry.to_str().unwrap(), imgcodecs::IMREAD_COLOR)
-                .unwrap();
-
-            
+            let img = imgcodecs::imread(entry.to_str().unwrap(), imgcodecs::IMREAD_COLOR).unwrap();
 
             let size = img.size().unwrap();
             let (width, height) = (size.width, size.height);
@@ -817,6 +818,198 @@ pub async fn split_images_with_filter(
             tracing::info!("Label {} RTL iteration done", label_id);
 
             tracing::info!("Label {} process done", label_id);
+        });
+    }
+
+    while threads.join_next().await.is_some() {}
+}
+
+pub async fn split_images_with_label_filter(
+    images_path: &String,
+    labels_path: &String,
+    target_height: &u32,
+    target_width: &u32,
+) {
+    let valid_name_set: Arc<RwLock<HashSet<String>>> = Arc::new(RwLock::new(HashSet::new()));
+
+    let mut valid_name_set_writer = valid_name_set.write().unwrap();
+    fs::read_dir(labels_path)
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .for_each(|e| {
+            let name = e.file_stem().unwrap().to_str().unwrap().to_string();
+            valid_name_set_writer.insert(name);
+        });
+    drop(valid_name_set_writer);
+
+    let image_entries: Vec<PathBuf>;
+
+    let images_output_path: String;
+
+    let images_path = PathBuf::from(images_path.as_str());
+
+    if images_path.is_dir() {
+        image_entries = fs::read_dir(&images_path)
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .collect();
+
+        images_output_path = format!("{}/output/", images_path.to_str().unwrap());
+    } else {
+        image_entries = vec![images_path.clone()];
+        images_output_path = format!(
+            "{}/output/labels/",
+            images_path.parent().unwrap().to_str().unwrap()
+        );
+    }
+
+    let sem = Arc::new(Semaphore::new(
+        (*THREAD_POOL.read().expect_or_log("Get pool error")).into(),
+    ));
+    tracing::info!("sem available permits: {}", sem.available_permits());
+    let mut threads = tokio::task::JoinSet::new();
+
+    match fs::create_dir_all(&images_output_path) {
+        Ok(_) => {
+            tracing::info!("Image output directory created");
+        }
+        Err(e) => {
+            if e.kind() == std::io::ErrorKind::AlreadyExists {
+                tracing::info!("Image output directory already exists");
+            } else {
+                tracing::error!("Failed to create directory: {}", e);
+                return ();
+            }
+        }
+    }
+
+    // Image Processing
+    let mut image_extension = None;
+    for entry in image_entries {
+        if !entry.is_file() {
+            continue;
+        }
+
+        if image_extension.is_none() {
+            let extension = entry
+                .extension()
+                .unwrap()
+                .to_os_string()
+                .into_string()
+                .unwrap();
+            image_extension = Some(extension);
+        }
+
+        let permit = Arc::clone(&sem);
+        let target_width = *target_width;
+        let target_height = *target_height;
+        let valid_name_set = Arc::clone(&valid_name_set);
+        let image_extension = image_extension.clone();
+
+        let images_output_path = images_output_path.clone();
+        threads.spawn(async move {
+            let _ = permit.acquire().await.unwrap();
+            tracing::info!(
+                "Processing {}",
+                entry.file_name().unwrap().to_str().unwrap()
+            );
+            let image_id = entry.file_stem().unwrap().to_str().unwrap().to_string();
+            let img =
+                imgcodecs::imread(entry.to_str().unwrap(), imgcodecs::IMREAD_UNCHANGED).unwrap();
+
+            let size = img.size().unwrap();
+            let (width, height) = (size.width, size.height);
+            let y_count = height / target_height as i32;
+            let x_count = width / target_width as i32;
+            // let mut labels_map = HashMap::<String, Mat>::new();
+
+            // Crop horizontally from left
+            let row_iter = ProgressAdaptor::new(0..y_count);
+            let row_progress = row_iter.items_processed();
+            row_iter.for_each(|row_index| {
+                for col_index in 0..x_count {
+                    let image_id = format!("{}_LTR_x{}_y{}", image_id, col_index, row_index);
+                    if !valid_name_set.read().unwrap().contains(&image_id) {
+                        continue;
+                    }
+                    let cropped = core::Mat::roi(
+                        &img,
+                        core::Rect::new(
+                            col_index * target_width as i32,
+                            row_index * target_height as i32,
+                            target_width as i32,
+                            target_height as i32,
+                        ),
+                    )
+                    .unwrap();
+
+                    imgcodecs::imwrite(
+                        &format!(
+                            "{}/{}.{}",
+                            images_output_path,
+                            image_id,
+                            image_extension.as_ref().unwrap()
+                        ),
+                        &cropped,
+                        &core::Vector::new(),
+                    )
+                    .unwrap();
+                }
+                if row_progress.get() != 0 && row_progress.get() % 10 == 0 {
+                    tracing::info!(
+                        "Image {} LTR Row {} / {} done",
+                        image_id,
+                        row_progress.get(),
+                        y_count
+                    );
+                }
+            });
+
+            tracing::info!("Label {} LTR iteration done", image_id);
+
+            // Crop horizontally from right
+            let row_iter = ProgressAdaptor::new(0..y_count);
+            let row_progress = row_iter.items_processed();
+            row_iter.for_each(|row_index| {
+                for col_index in 0..x_count {
+                    let image_id = format!("{}_RTL_x{}_y{}", image_id, col_index, row_index);
+                    if !valid_name_set.read().unwrap().contains(&image_id) {
+                        continue;
+                    }
+                    let cropped = core::Mat::roi(
+                        &img,
+                        core::Rect::new(
+                            width - (col_index + 1) * target_width as i32,
+                            height - (row_index + 1) * target_height as i32,
+                            target_width as i32,
+                            target_height as i32,
+                        ),
+                    )
+                    .unwrap();
+                    imgcodecs::imwrite(
+                        &format!(
+                            "{}/{}.{}",
+                            images_output_path,
+                            image_id,
+                            image_extension.as_ref().unwrap()
+                        ),
+                        &cropped,
+                        &core::Vector::new(),
+                    )
+                    .unwrap();
+                }
+                if row_progress.get() != 0 && row_progress.get() % 10 == 0 {
+                    tracing::info!(
+                        "Image {} RTL Row {} / {} done",
+                        image_id,
+                        row_progress.get(),
+                        y_count
+                    );
+                }
+            });
+            tracing::info!("Image {} RTL iteration done", image_id);
+
+            tracing::info!("Image {} process done", image_id);
         });
     }
 
