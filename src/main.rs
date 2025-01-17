@@ -279,7 +279,7 @@ enum CommonCommands {
         train_ratio: f32,
     },
 
-    /// Split dataset into train and test sets and save file names to txt file
+    /// Split dataset into train and test sets and save file names to txt file, for yolo dataset
     #[command(name = "generate-dataset-txt")]
     GenerateDatasetTXT {
         #[arg(
@@ -295,6 +295,12 @@ enum CommonCommands {
             help = "The ratio of train set, should be between 0 and 1"
         )]
         train_ratio: f32,
+    },
+
+    #[command(name = "txt2json")]
+    TXT2JSON {
+        #[arg(short, long, help = "TXT file path")]
+        txt_path: String,
     },
 
     /// Combine multiple JSON format dataset list compatible with huggingface dataset library
@@ -603,6 +609,9 @@ async fn main() {
                 train_ratio,
             } => {
                 common::dataset::generate_dataset_json(dataset_path, train_ratio);
+            }
+            CommonCommands::TXT2JSON { txt_path } => {
+                common::dataset::txt2json(txt_path);
             }
             CommonCommands::CombineDatasetJSON {
                 dataset_path,

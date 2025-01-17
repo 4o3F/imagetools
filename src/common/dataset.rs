@@ -7,6 +7,7 @@ use opencv::{
 use parking_lot::RwLock;
 use rayon::prelude::*;
 use rayon_progress::ProgressAdaptor;
+use serde::Serialize;
 use std::{
     collections::HashMap,
     fs,
@@ -254,11 +255,7 @@ pub async fn generate_dataset_txt(dataset_path: &String, train_ratio: &f32) {
     let valid_data = data[train_count as usize..].to_vec();
 
     let dataset_path = dataset_path.to_str().unwrap();
-    fs::write(
-        format!("{}/../val.txt", dataset_path),
-        valid_data.concat(),
-    )
-    .unwrap();
+    fs::write(format!("{}/../val.txt", dataset_path), valid_data.concat()).unwrap();
     fs::write(
         format!("{}/../train.txt", dataset_path),
         train_data.concat(),
@@ -269,6 +266,35 @@ pub async fn generate_dataset_txt(dataset_path: &String, train_ratio: &f32) {
     tracing::info!("Valid dataset length: {}", valid_data.len());
     tracing::info!("Saved to {}/../val.txt", dataset_path);
     tracing::info!("Dataset split done");
+}
+
+pub fn txt2json(txt_path: &String) {
+    let save_path = PathBuf::from(txt_path);
+    let (save_path, file_name) = (
+        save_path.parent().unwrap().to_str().unwrap().to_string(),
+        save_path.file_stem().unwrap().to_str().unwrap().to_string(),
+    );
+    let save_path = PathBuf::from(format!("{}/{}.json", save_path, file_name));
+
+    #[derive(Serialize)]
+    struct DatasetItem {
+        image: String,
+        label: String,
+    }
+
+    let mut json = Vec::new();
+    for line in fs::read_to_string(txt_path).unwrap().lines() {
+        let image = line.to_string();
+        let label = line.replace("/images/", "/labels/");
+        let label = label.replace(".tif", ".png");
+        json.push(DatasetItem { image, label });
+    }
+
+    let json = serde_json::to_string(&json).unwrap();
+
+    fs::write(&save_path, json).unwrap();
+
+    tracing::info!("Saved to {}", save_path.display());
 }
 
 // TODO: rewrite this to make it suitable for all datasets
