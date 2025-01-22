@@ -438,6 +438,13 @@ pub async fn rgb2class(dataset_path: &String, rgb_list: &str) {
                             data[0] = *new_color;
                             data[1] = *new_color;
                             data[2] = *new_color;
+                        } else {
+                            tracing::error!(
+                                "Color {}, {}, {} not found in RGB list",
+                                data[0],
+                                data[1],
+                                data[2]
+                            )
                         }
                     });
 

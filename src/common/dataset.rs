@@ -1,4 +1,6 @@
 use indicatif::ProgressStyle;
+use num::ToPrimitive;
+use num_rational::Ratio;
 use opencv::{
     core::{self, MatTraitConst, ModifyInplace, Vec3b},
     imgcodecs::{self, imread, IMREAD_COLOR, IMREAD_GRAYSCALE},
@@ -499,44 +501,64 @@ pub async fn count_classes(dataset_path: &String) {
             .collect();
     }
 
-    let type_map = Arc::new(Mutex::new(HashMap::<u8, i32>::new()));
+    let type_map = Arc::new(Mutex::new(HashMap::<u8, u64>::new()));
     let sem = Arc::new(Semaphore::new(
         (*THREAD_POOL.read().expect_or_log("Get pool error")).into(),
     ));
     let mut threads = JoinSet::new();
+
+    let header_span = info_span!("count_rgb_threads");
+    header_span.pb_set_style(
+        &ProgressStyle::with_template("{spinner} Processing {msg}\n{wide_bar} {pos}/{len}")
+            .unwrap(),
+    );
+    header_span.pb_set_length(entries.len() as u64);
+    header_span.pb_set_message("Processing");
+
+    let header_span_enter = header_span.enter();
+
     for entry in entries {
         if entry.is_dir() {
             continue;
         }
         let type_map = Arc::clone(&type_map);
         let sem = Arc::clone(&sem);
-        threads.spawn(async move {
-            let _ = sem.acquire().await.unwrap();
-            let img = imread(entry.to_str().unwrap(), IMREAD_GRAYSCALE).unwrap();
-            let row = img.rows();
-            let cols = img.cols();
-            let img = Arc::new(RwLock::new(img));
+        let header_span = header_span.clone();
 
-            let row_iter = ProgressAdaptor::new(0..row);
-            row_iter.for_each(|row_index| {
-                let mut row_type_map = HashMap::<u8, i32>::new();
-                let row = img.read().row(row_index).unwrap().clone_pointee();
-                for col_index in 0..cols {
-                    let pixel = row.at_2d::<u8>(0, col_index).unwrap();
-                    row_type_map
-                        .entry(*pixel)
-                        .and_modify(|x| *x += 1)
-                        .or_insert(1);
-                }
+        threads.spawn(
+            async move {
+                let _ = sem.acquire().await.unwrap();
+                let img = imread(entry.to_str().unwrap(), IMREAD_GRAYSCALE).unwrap();
+                let row = img.rows();
+                let cols = img.cols();
+                let img = Arc::new(RwLock::new(img));
 
-                let mut entry = type_map.lock().unwrap();
-                for (class_id, count) in row_type_map.iter() {
-                    let total_count = entry.entry(*class_id).or_insert(0);
-                    *total_count += count;
-                }
-            });
-            tracing::info!("Image {} done", entry.to_str().unwrap());
-        });
+                let row_iter = ProgressAdaptor::new(0..row);
+                row_iter.for_each(|row_index| {
+                    let mut row_type_map = HashMap::<u8, u64>::new();
+                    let row = img.read().row(row_index).unwrap().clone_pointee();
+                    for col_index in 0..cols {
+                        let pixel = row.at_2d::<u8>(0, col_index).unwrap();
+                        row_type_map
+                            .entry(*pixel)
+                            .and_modify(|x| *x += 1)
+                            .or_insert(1);
+                    }
+
+                    let mut entry = type_map.lock().unwrap();
+                    for (class_id, count) in row_type_map.iter() {
+                        let total_count = entry.entry(*class_id).or_insert(0);
+                        *total_count += count;
+                    }
+                });
+                tracing::info!("Image {} done", entry.to_str().unwrap());
+                tracing::trace!("Image {} done", entry.to_str().unwrap());
+                Span::current()
+                    .pb_set_message(&format!("{}", entry.file_name().unwrap().to_str().unwrap()));
+                Span::current().pb_inc(1);
+            }
+            .instrument(header_span),
+        );
     }
 
     while let Some(result) = threads.join_next().await {
@@ -549,18 +571,25 @@ pub async fn count_classes(dataset_path: &String) {
             }
         }
     }
+
+    drop(header_span_enter);
+    drop(header_span);
     tracing::info!("Dataset counted");
 
     let type_map = type_map.lock().unwrap();
     tracing::info!("Classes counts: {:?}", type_map);
 
-    let total_pixel = type_map.values().sum::<i32>();
+    let total_pixel = type_map.values().sum::<u64>();
 
     let mut weight_map = HashMap::<u8, f64>::new();
-    let class_count = type_map.len() as f64;
+    let class_count = type_map.len();
     for (class_id, count) in type_map.iter() {
-        let class_weight: f64 = f64::from(total_pixel) / (f64::from(*count) * class_count);
-        weight_map.insert(*class_id, class_weight);
+        let weight = Ratio::new(
+            total_pixel,
+            *count * u64::try_from(class_count).unwrap_or_log(),
+        );
+        let weight = weight.to_f64().unwrap();
+        weight_map.insert(*class_id, weight);
     }
 
     tracing::info!("Inverse class weights: {:?}", weight_map);
