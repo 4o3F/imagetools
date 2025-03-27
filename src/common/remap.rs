@@ -2,7 +2,7 @@ use indicatif::ProgressStyle;
 use opencv::{
     core::{Mat, MatTrait, MatTraitConst, MatTraitManual, ModifyInplace, Vec3b, Vector},
     imgcodecs::{self, imread, imwrite},
-    imgproc::{COLOR_BGR2GRAY, COLOR_GRAY2BGR},
+    imgproc::{self},
 };
 use rayon::iter::ParallelBridge;
 use rayon::prelude::*;
@@ -317,7 +317,7 @@ pub async fn class2rgb(dataset_path: &String, rgb_list: &str) {
 
                 unsafe {
                     img.modify_inplace(|input, output| {
-                        opencv::imgproc::cvt_color(input, output, COLOR_GRAY2BGR, 0)
+                        opencv::imgproc::cvt_color(input, output, imgproc::COLOR_GRAY2RGB, 0)
                             .expect_or_log("Cvt grayscale to RGB error")
                     });
                 }
@@ -328,6 +328,13 @@ pub async fn class2rgb(dataset_path: &String, rgb_list: &str) {
                     .for_each(|(_, data)| {
                         *data = *transform_map.read().get(&data[0]).unwrap();
                     });
+
+                unsafe {
+                    img.modify_inplace(|input, output| {
+                        opencv::imgproc::cvt_color(input, output, imgproc::COLOR_RGB2BGR, 0)
+                            .expect_or_log("Cvt RGB to BGR error")
+                    });
+                }
 
                 imwrite(
                     format!(
@@ -426,6 +433,12 @@ pub async fn rgb2class(dataset_path: &String, rgb_list: &str) {
             async move {
                 let _ = sem.acquire().await.unwrap();
                 let mut img = imread(&entry.to_str().unwrap(), imgcodecs::IMREAD_COLOR).unwrap();
+                unsafe {
+                    img.modify_inplace(|input, output| {
+                        opencv::imgproc::cvt_color(input, output, imgproc::COLOR_BGR2RGB, 0)
+                            .expect_or_log("Cvt color to RGB error")
+                    });
+                }
                 let transform_map = transform_map.read().clone();
 
                 img.iter_mut::<Vec3b>()
@@ -440,7 +453,8 @@ pub async fn rgb2class(dataset_path: &String, rgb_list: &str) {
                             data[2] = *new_color;
                         } else {
                             tracing::error!(
-                                "Color {}, {}, {} not found in RGB list",
+                                "Image {} Color {}, {}, {} not found in RGB list",
+                                entry.file_name().unwrap().to_str().unwrap(),
                                 data[0],
                                 data[1],
                                 data[2]
@@ -449,7 +463,7 @@ pub async fn rgb2class(dataset_path: &String, rgb_list: &str) {
                     });
 
                 let mut gray_result = Mat::default();
-                opencv::imgproc::cvt_color(&img, &mut gray_result, COLOR_BGR2GRAY, 0)
+                opencv::imgproc::cvt_color(&img, &mut gray_result, imgproc::COLOR_BGR2GRAY, 0)
                     .expect_or_log("Cvt color to gray error");
 
                 imwrite(

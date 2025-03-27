@@ -1,4 +1,5 @@
 use indicatif::ProgressStyle;
+use itertools::Itertools;
 use num::ToPrimitive;
 use num_rational::Ratio;
 use opencv::{
@@ -592,7 +593,10 @@ pub async fn count_classes(dataset_path: &String) {
         weight_map.insert(*class_id, weight);
     }
 
-    tracing::info!("Inverse class weights: {:?}", weight_map);
+    tracing::info!("Inverse class weights:");
+    for class_id in weight_map.keys().sorted() {
+        tracing::info!("{}: {}", class_id, weight_map[class_id]);
+    }
 }
 
 pub async fn count_rgb(dataset_path: &String, rgb_list: &String) {
