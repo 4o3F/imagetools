@@ -16,7 +16,7 @@ git status
 git checkout .
 git checkout "$VCPKG_VERSION"
 ./bootstrap-vcpkg.sh -disableMetrics
-#./vcpkg integrate install
+./vcpkg integrate install
 echo "set(VCPKG_BUILD_TYPE release)" >> triplets/x64-linux.cmake
 echo "set(VCPKG_BUILD_TYPE release)" >> triplets/arm64-osx.cmake
 echo "set(VCPKG_BUILD_TYPE release)" >> triplets/x64-osx.cmake
