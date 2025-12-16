@@ -22,6 +22,7 @@ jobs:
         platform:
           - os-name: Ubuntu 24.04
             runs-on: ubuntu-24.04
+            container: ubuntu:20.04
             vcpkg-version: 2025.10.17
             vcpkg-features-cache-key: contrib
             vcpkg-features: contrib
@@ -34,6 +35,7 @@ jobs:
             target: x86_64-pc-windows-msvc
 
     runs-on: ${{ matrix.platform.runs-on }}
+    container: ${{ matrix.platform.container }}
     env:
       VCPKG_VERSION: ${{ matrix.platform.vcpkg-version }}
       VCPKG_FEATURES: ${{ matrix.platform.vcpkg-features }}
@@ -48,14 +50,11 @@ jobs:
           path: ~/build
           key: vcpkg-${{ matrix.platform.vcpkg-version }}-${{ matrix.platform.os-image }}-${{ matrix.platform.vcpkg-features-cache-key }}
 
-      - name: Install cargo-binstall
-        uses: cargo-bins/cargo-binstall@v1.16.4
-        
-      - name: Install Cross
-        run: cargo binstall cross
+      - name: Install Dependencies
+        run: bash scripts/install.sh
 
       - name: Build binary
-        run: cross build --target ${{ matrix.platform.target }}
+        run: bash scripts/build.sh
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4

@@ -83,4 +83,7 @@ echo "=== Target settings:"
 rustc --version
 rustc --print=cfg
 export RUST_BACKTRACE=full
+
 export OPENCV_MSVC_CRT="static"
+
+cargo build --release
