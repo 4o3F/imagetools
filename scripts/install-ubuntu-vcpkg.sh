@@ -3,18 +3,16 @@
 set -xeu
 
 # Remove unused files to increase available disk space
-rm -rf /usr/local/.ghcup
-rm -rf /opt/hostedtoolcache/CodeQL
-rm -rf /usr/local/lib/android/sdk/ndk
-rm -rf /usr/share/dotnet
-rm -rf /opt/ghc
-rm -rf /usr/local/share/boost
+sudo rm -rf /usr/local/.ghcup
+sudo rm -rf /opt/hostedtoolcache/CodeQL
+sudo rm -rf /usr/local/lib/android/sdk/ndk
+sudo rm -rf /usr/share/dotnet
+sudo rm -rf /opt/ghc
+sudo rm -rf /usr/local/share/boost
 
-apt-get update
-apt-get install -y \
+sudo apt-get update
+sudo apt-get install -y \
 	autoconf \
-	autoconf-archive \
-	automake \
 	bison \
 	build-essential \
 	clang \
@@ -42,21 +40,6 @@ apt-get install -y \
 	tar \
 	unzip \
 	zip
-
-pushd . > /dev/null
-# Download and extract it
-curl -OL https://ftp.gnu.org/gnu/autoconf/autoconf-2.71.tar.xz
-tar -xf autoconf-2.71.tar.xz
-
-# Configure, make, and install it
-cd autoconf-2.71/
-./configure
-make 
-sudo make install
-
-popd > /dev/null
-# Re-source your profile to bring in the updates
-. ~/.profile
 
 export VCPKG_DEFAULT_TRIPLET=x64-linux
 
