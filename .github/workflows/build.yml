@@ -49,7 +49,9 @@ jobs:
           key: vcpkg-${{ matrix.platform.vcpkg-version }}-${{ matrix.platform.os-image }}-${{ matrix.platform.vcpkg-features-cache-key }}
 
       - name: Install Cross
-        run: cargo-binstall cross
+        run: |
+          cargo install cargo-binstall
+          cargo-binstall cross
 
       - name: Build binary
         run: cross build --target ${{ matrix.platform.target }}
