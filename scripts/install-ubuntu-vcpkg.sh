@@ -43,6 +43,19 @@ apt-get install -y \
 	unzip \
 	zip
 
+# Download and extract it
+curl -OL https://ftp.gnu.org/gnu/autoconf/autoconf-2.71.tar.xz
+tar -xf autoconf-2.71.tar.xz
+
+# Configure, make, and install it
+cd autoconf-2.71/
+./configure
+time make 
+sudo make install
+
+# Re-source your profile to bring in the updates
+. ~/.profile
+
 export VCPKG_DEFAULT_TRIPLET=x64-linux
 
 script_dir="$(dirname "$(readlink -f "$BASH_SOURCE")")"
