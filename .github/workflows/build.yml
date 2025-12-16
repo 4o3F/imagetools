@@ -33,7 +33,7 @@ jobs:
             vcpkg-features: contrib
             target: x86_64-pc-windows-msvc
 
-    runs-on: ${{ matrix.platform.os-image }}
+    runs-on: ${{ matrix.platform.runs-on }}
     env:
       VCPKG_VERSION: ${{ matrix.platform.vcpkg-version }}
       VCPKG_FEATURES: ${{ matrix.platform.vcpkg-features }}
