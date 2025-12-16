@@ -13,6 +13,8 @@ rm -rf /usr/local/share/boost
 apt-get update
 apt-get install -y \
 	autoconf \
+	autoconf-archive \
+	automake \
 	bison \
 	build-essential \
 	clang \
