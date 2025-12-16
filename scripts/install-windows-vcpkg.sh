@@ -7,4 +7,4 @@ choco install -y llvm --version "$CHOCO_LLVM_VERSION"
 
 export VCPKG_DEFAULT_TRIPLET=x64-windows
 
-
+. "$script_dir/install-vcpkg.sh"
