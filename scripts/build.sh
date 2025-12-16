@@ -50,7 +50,7 @@ elif [[ "$os_family" == "macOS" ]]; then
 			export OPENCV_LINK_LIBS="framework=opencv2,framework=OpenCL,framework=Cocoa,framework=Accelerate,framework=AVFoundation,framework=CoreGraphics,framework=CoreMedia,framework=CoreVideo,framework=QuartzCore,clang_rt.osx"
 		else
 			export OPENCV_LINK_PATHS="$opencv_build_path,$clang_dir/lib/darwin,$opencv_build_path/build/build-$(uname -m)-macosx/install/lib/"
-			export OPENCV_LINK_LIBS="framework=opencv2,framework=OpenCL,framework=Cocoa,framework=Accelerate,framework=AVFoundation,framework=CoreGraphics,framework=CoreMedia,framework=CoreVideo,framework=QuartzCore,clang_rt.osx,OrbbecSDK"
+			export OPENCV_LINK_LIBS="framework=opencv2,framework=OpenCL,framework=Cocoa,framework=Accelerate,framework=AVFoundation,framework=CoreGraphics,framework=CoreMedia,framework=CoreVideo,framework=QuartzCore,clang_rt.osx"
 		fi
 		export OPENCV_INCLUDE_PATHS="$opencv_build_path"
 	fi
@@ -65,15 +65,15 @@ elif [[ "$os_family" == "Linux" ]]; then
 		export OPENCV_LINK_LIBS="+freetype,bz2,brotlidec,brotlicommon"
 	else
 		if [[ "${OPENCV_LINKAGE:-dynamic}" == "static" ]]; then # static build
-			export OPENCV_LINK_LIBS=opencv_gapi,opencv_highgui,opencv_objdetect,opencv_dnn,opencv_videostab,opencv_calib3d,opencv_features2d,opencv_stitching,opencv_flann,opencv_videoio,opencv_rgbd,opencv_aruco,opencv_video,opencv_ml,opencv_imgcodecs,opencv_imgproc,opencv_core,ade,ittnotify,liblibwebp,liblibtiff,liblibjpeg-turbo,liblibpng,liblibopenjp2,ippiw,ippicv,liblibprotobuf,quirc,zlib
+			export OPENCV_LINK_LIBS=static=opencv_gapi,static=opencv_highgui,static=opencv_objdetect,static=opencv_dnn,static=opencv_videostab,static=opencv_calib3d,static=opencv_features2d,static=opencv_stitching,static=opencv_flann,static=opencv_videoio,static=opencv_rgbd,static=opencv_aruco,static=opencv_video,static=opencv_ml,static=opencv_imgcodecs,static=opencv_imgproc,static=opencv_core,ade,ittnotify,liblibwebp,liblibtiff,liblibjpeg-turbo,liblibpng,liblibopenjp2,ippiw,ippicv,liblibprotobuf,quirc,zlib
 		fi
 	fi
 fi
 
 # remove tests and examples that require the latest OpenCV version so that they don't fail due to missing modules
-if [[ "${OPENCV_VERSION:-}" != "4.10.0" ]]; then
+if [[ "${OPENCV_VERSION:-}" != "4.11.0" || "${OPENCV_VERSION:-}" != "5.0.0-alpha" ]]; then
 	rm -vf tests/*_only_latest_opencv.rs
-	rm -vf examples/dnn_face_detect.rs examples/text_detection.rs examples/camera_calibration.rs
+	rm -vf examples/dnn_face_detect.rs examples/text_detection.rs
 fi
 
 echo "=== Current directory: $(pwd)"
@@ -82,14 +82,5 @@ export
 echo "=== Target settings:"
 rustc --version
 rustc --print=cfg
-
 export RUST_BACKTRACE=full
-
-if [[ "$os_family" == "Windows" ]]; then
-	export OPENCV_MSVC_CRT="static"
-	cargo build --release
-elif [[ "$os_family" == "Linux" ]]; then
-	cargo build --release
-else
-	cargo build --release
-fi
+export OPENCV_MSVC_CRT="static"

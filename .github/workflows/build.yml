@@ -19,79 +19,49 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os-image:
-          - ubuntu-20.04
-          - windows-2022
-        include:
-          - os-image: ubuntu-20.04
-            opencv-version: 4.10.0
-            linkage: static
-            vcpkg-version: ""
-          - os-image: windows-2022
-            opencv-version: 4.10.0
-            linkage: static
-            vcpkg-version: 2024.07.12
+        platform:
+          - os-name: Ubuntu 24.04
+            runs-on: ubuntu-24.04
+            vcpkg-version: 2025.10.17
+            vcpkg-features-cache-key: contrib
+            vcpkg-features: contrib
+            target: x86_64-unknown-linux-gnu
+          - os-name: Windows-x86_64
+            runs-on: windows-latest
+            vcpkg-version: 2025.10.17
+            vcpkg-features-cache-key: contrib
+            vcpkg-features: contrib
+            target: x86_64-pc-windows-msvc
 
-    runs-on: ${{ matrix.os-image }}
+    runs-on: ${{ matrix.platform.os-image }}
     env:
-      Atlas_ROOT_DIR: /usr/include/ # for cmake to find lapacke.h
-      OPENCV_VERSION: ${{ matrix.opencv-version }}
-      OPENCV_LINKAGE: ${{ matrix.linkage }}
-      VCPKG_VERSION: ${{ matrix.vcpkg-version }}
+      VCPKG_VERSION: ${{ matrix.platform.vcpkg-version }}
+      VCPKG_FEATURES: ${{ matrix.platform.vcpkg-features }}
+      SCCACHE_GHA_ENABLED: "true"
+      RUSTC_WRAPPER: "sccache"
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - uses: actions/cache@v4
-        with:
-          path: ~/dist
-          key: dist-${{ matrix.opencv-version }}
-
-      - uses: actions/cache@v4
+      - uses: mozilla-actions/sccache-action@v0.0.9
+      - uses: actions/cache@v5
         with:
           path: ~/build
-          key: build-${{ matrix.opencv-version }}-${{ matrix.linkage }}-${{ matrix.os-image }}
+          key: vcpkg-${{ matrix.platform.vcpkg-version }}-${{ matrix.platform.os-image }}-${{ matrix.platform.vcpkg-features-cache-key }}
 
-      - name: Install dependencies
-        run: scripts/install.sh
-        shell: bash
-
-      - uses: Swatinem/rust-cache@v2
+      - name: Build binary
+        uses: houseabsolute/actions-rust-cross@v1
         with:
-          key: ${{ matrix.os-image }}
-      - name: Build project
-        run: scripts/build.sh
-        shell: bash
-   
+          command: build
+          target: ${{ matrix.platform.target }}
+          args: "--locked --release"
+
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: imagetools-${{ matrix.os-image }}
+          name: imagetools-${{ matrix.platform.target }}
           path: |
             target/release/imagetools
             target/release/imagetools.exe
             target/release/imagetools.pdb
           retention-days: 14
-  
-
-  release:
-    runs-on: ubuntu-20.04
-    needs: [build]
-    steps:
-      - name: Download packages
-        uses: actions/download-artifact@v4
-        with:
-          path: /home/runner/release-binary
-      - name: Compress artifacts
-        run: |
-          cd /home/runner/release-binary
-          for i in */; do zip -r "${i%/}.zip" "$i"; done
-          ls /home/runner/release-binary
-      - name: Release
-        uses: softprops/action-gh-release@v2
-        with:
-          prerelease: true
-          name: Dev build
-          tag_name: "pre-release"
-          files: |
-            /home/runner/release-binary/*.zip
   

@@ -17,8 +17,6 @@ else
 fi
 
 if [[ "$os_family" == "Linux" ]]; then
-	# free up disk space in Github Actions image: https://github.com/actions/runner-images/issues/2840
-	sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost
 	if [[ "${VCPKG_VERSION:-}" != "" ]]; then # vcpkg build
 		"$ci_dir/install-ubuntu-vcpkg.sh"
 	else
@@ -33,7 +31,7 @@ elif [[ "$os_family" == "macOS" ]]; then
 		"$ci_dir/install-macos-framework.sh"
 	fi
 elif [[ "$os_family" == "Windows" ]]; then
-	export CHOCO_LLVM_VERSION=20.1.8
+	export CHOCO_LLVM_VERSION=21.1.0 # https://community.chocolatey.org/packages/llvm#versionhistory
 	if [[ "${VCPKG_VERSION:-}" != "" ]]; then # vcpkg build
 		"$ci_dir/install-windows-vcpkg.sh"
 	else # chocolatey build
