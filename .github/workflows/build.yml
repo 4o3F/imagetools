@@ -22,7 +22,6 @@ jobs:
         platform:
           - os-name: Ubuntu 24.04
             runs-on: ubuntu-24.04
-            container: buildpack-deps:focal
             vcpkg-version: 2025.10.17
             vcpkg-features-cache-key: contrib
             vcpkg-features: contrib
