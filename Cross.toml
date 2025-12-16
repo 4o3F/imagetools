@@ -1,2 +1,2 @@
 [build]
-pre-build = ["bash scripts/install.sh", "bash scripts/build.sh"]
+pre-build = ["ls", "pwd", "bash scripts/install.sh", "bash scripts/build.sh"]
