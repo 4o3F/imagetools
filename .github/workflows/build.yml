@@ -48,10 +48,11 @@ jobs:
           path: ~/build
           key: vcpkg-${{ matrix.platform.vcpkg-version }}-${{ matrix.platform.os-image }}-${{ matrix.platform.vcpkg-features-cache-key }}
 
+      - name: Install cargo-binstall
+        uses: cargo-bins/cargo-binstall@v1.16.4
+        
       - name: Install Cross
-        run: |
-          cargo install cargo-binstall
-          cargo-binstall cross
+        run: cargo binstall cross
 
       - name: Build binary
         run: cross build --target ${{ matrix.platform.target }}
