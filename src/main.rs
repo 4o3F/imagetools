@@ -159,9 +159,9 @@ enum CommonCommands {
         target_width: u32,
     },
 
-    /// Filter dataset with RGB list
+    /// Process dataset with RGB list
     #[command(name = "filter-dataset-with-rgblist")]
-    FilterDatasetWithRGBList {
+    ProcessDatasetWithRGBList {
         #[arg(
             short,
             long,
@@ -554,12 +554,12 @@ async fn main() {
                 )
                 .await;
             }
-            CommonCommands::FilterDatasetWithRGBList {
+            CommonCommands::ProcessDatasetWithRGBList {
                 dataset_path,
                 rgb_list,
                 valid_rgb_mode,
             } => {
-                common::augment::filter_dataset_with_rgblist(
+                common::augment::process_dataset_with_rgblist(
                     dataset_path,
                     rgb_list,
                     *valid_rgb_mode,

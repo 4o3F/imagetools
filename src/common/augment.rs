@@ -11,7 +11,7 @@ use rayon::prelude::*;
 use rayon_progress::ProgressAdaptor;
 use tokio::{sync::Semaphore, task::JoinSet};
 
-use opencv::{boxed_ref::BoxedRef, core, imgcodecs, prelude::*};
+use opencv::{boxed_ref::BoxedRef, core, imgcodecs, imgproc::COLOR_BGR2RGB, prelude::*};
 use tracing::{info_span, Instrument, Span};
 use tracing_indicatif::span_ext::IndicatifSpanExt;
 use tracing_unwrap::{OptionExt, ResultExt};
@@ -73,7 +73,6 @@ pub async fn split_images(dataset_path: &String, target_height: &u32, target_wid
                 .expect_or_log("Failed to convert file extension to string")
                 .to_owned();
 
-            // 读取图片
             let img = imgcodecs::imread(&entry_path, imgcodecs::IMREAD_UNCHANGED)
                 .expect_or_log(format!("Failed to read image: {}", entry_path).as_str());
             if img.empty() {
@@ -398,7 +397,7 @@ pub fn check_valid_pixel_count(
     (ratio > 0.01, ratio)
 }
 
-pub async fn filter_dataset_with_rgblist(
+pub async fn process_dataset_with_rgblist(
     dataset_path: &String,
     rgb_list_str: &str,
     valid_rgb_mode: bool,
@@ -536,8 +535,19 @@ pub async fn filter_dataset_with_rgblist(
         threads.spawn(
             async move {
                 let _permit = sem.acquire().await.unwrap();
-                let img = imgcodecs::imread(&path.to_str().unwrap(), imgcodecs::IMREAD_UNCHANGED)
-                    .unwrap();
+                let mut img =
+                    imgcodecs::imread(&path.to_str().unwrap(), imgcodecs::IMREAD_COLOR)
+                        .unwrap();
+                if img.dims() != 3 {
+                    tracing::error!("Image is not RGB format, skipping!");
+                    return;
+                }
+                unsafe {
+                    img.modify_inplace(|input, output| {
+                        opencv::imgproc::cvt_color(input, output, COLOR_BGR2RGB, 0)
+                            .expect_or_log("Cvt BGR to RGB error")
+                    });
+                }
                 let img = BoxedRef::from(img);
                 let rgb_list = rgb_list.read().unwrap();
                 let (valid, _) = check_valid_pixel_count(&img, &rgb_list, valid_rgb_mode);
@@ -723,8 +733,19 @@ pub async fn split_images_with_rgb_filter(
                 entry.file_name().unwrap().to_str().unwrap()
             );
             let label_id = entry.file_stem().unwrap().to_str().unwrap().to_string();
-            let img = imgcodecs::imread(entry.to_str().unwrap(), imgcodecs::IMREAD_COLOR).unwrap();
+            let mut img =
+                imgcodecs::imread(entry.to_str().unwrap(), imgcodecs::IMREAD_COLOR).unwrap();
 
+            if img.dims() != 3 {
+                tracing::error!("Image is not RGB format, skipping!");
+                return;
+            }
+            unsafe {
+                img.modify_inplace(|input, output| {
+                    opencv::imgproc::cvt_color(input, output, COLOR_BGR2RGB, 0)
+                        .expect_or_log("Cvt BGR to RGB error")
+                });
+            }
             let size = img.size().unwrap();
             let (width, height) = (size.width, size.height);
             let y_count = height / target_height as i32;

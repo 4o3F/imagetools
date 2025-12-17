@@ -85,4 +85,4 @@ rustc --version
 rustc --print=cfg
 export RUST_BACKTRACE=full
 
-cargo build --release -vv
+cargo build --release
