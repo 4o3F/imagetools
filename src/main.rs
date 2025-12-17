@@ -160,7 +160,7 @@ enum CommonCommands {
     },
 
     /// Process dataset with RGB list
-    #[command(name = "filter-dataset-with-rgblist")]
+    #[command(name = "process-dataset-with-rgblist")]
     ProcessDatasetWithRGBList {
         #[arg(
             short,

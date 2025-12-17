@@ -536,10 +536,9 @@ pub async fn process_dataset_with_rgblist(
             async move {
                 let _permit = sem.acquire().await.unwrap();
                 let mut img =
-                    imgcodecs::imread(&path.to_str().unwrap(), imgcodecs::IMREAD_COLOR)
-                        .unwrap();
+                    imgcodecs::imread(&path.to_str().unwrap(), imgcodecs::IMREAD_COLOR).unwrap();
                 if img.dims() != 3 {
-                    tracing::error!("Image is not RGB format, skipping!");
+                    tracing::error!("Image is not RGB format (has {}), skipping!", img.dims());
                     return;
                 }
                 unsafe {
@@ -737,7 +736,7 @@ pub async fn split_images_with_rgb_filter(
                 imgcodecs::imread(entry.to_str().unwrap(), imgcodecs::IMREAD_COLOR).unwrap();
 
             if img.dims() != 3 {
-                tracing::error!("Image is not RGB format, skipping!");
+                tracing::error!("Image is not RGB format (has {}), skipping!", img.dims());
                 return;
             }
             unsafe {
