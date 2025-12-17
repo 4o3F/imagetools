@@ -18,7 +18,8 @@ if [[ "$os_family" == "Windows" ]]; then
 	export PATH="/C/Program Files/LLVM/bin:$PATH"
 	export LIBCLANG_PATH="C:/Program Files/LLVM/bin"
 	if [[ "${VCPKG_VERSION:-}" != "" ]]; then # vcpkg build
-		export VCPKGRS_DYNAMIC=1
+		# export VCPKGRS_DYNAMIC=1
+		export OPENCV_MSVC_CRT="static"
 		export VCPKG_ROOT="$HOME/build/vcpkg"
 		echo "=== Installed vcpkg packages:"
 		"$VCPKG_ROOT/vcpkg" list
@@ -83,7 +84,5 @@ echo "=== Target settings:"
 rustc --version
 rustc --print=cfg
 export RUST_BACKTRACE=full
-
-export OPENCV_MSVC_CRT="static"
 
 cargo build --release
