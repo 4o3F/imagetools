@@ -538,7 +538,11 @@ pub async fn process_dataset_with_rgblist(
                 let mut img =
                     imgcodecs::imread(&path.to_str().unwrap(), imgcodecs::IMREAD_COLOR).unwrap();
                 if img.channels() != 3 {
-                    tracing::error!("Image is not RGB format (has {}), skipping!", img.channels());
+                    tracing::error!(
+                        "Image {} is not RGB format (has {}), skipping!",
+                        path.file_name().unwrap().to_str().unwrap(),
+                        img.channels()
+                    );
                     return;
                 }
                 unsafe {
@@ -736,7 +740,11 @@ pub async fn split_images_with_rgb_filter(
                 imgcodecs::imread(entry.to_str().unwrap(), imgcodecs::IMREAD_COLOR).unwrap();
 
             if img.channels() != 3 {
-                tracing::error!("Image is not RGB format (has {}), skipping!", img.channels());
+                tracing::error!(
+                    "Image {} is not RGB format (has {}), skipping!",
+                    entry.file_name().unwrap().to_str().unwrap(),
+                    img.channels()
+                );
                 return;
             }
             unsafe {
