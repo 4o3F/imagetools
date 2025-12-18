@@ -914,7 +914,7 @@ pub async fn split_images_with_label_filter(
     let header_span = info_span!("split_images_threads");
     header_span.pb_set_style(
         &ProgressStyle::with_template("{spinner} Processing {msg}\n{wide_bar} {pos}/{len}")
-            .unwrap(),
+            .map_err(|e| anyhow!("Tracing progress template generate failed {e}"))?,
     );
     header_span.pb_set_length(image_entries.len() as u64);
     header_span.pb_set_message("starting...");
@@ -929,7 +929,7 @@ pub async fn split_images_with_label_filter(
         }
 
         if image_extension.is_none() {
-            let extension = entry
+            let extension: String = entry
                 .extension()
                 .ok_or(anyhow!("Failed to get file extension"))?
                 .to_os_string()
@@ -953,6 +953,12 @@ pub async fn split_images_with_label_filter(
                 .to_string_lossy()
                 .into_owned();
             let task_span = info_span!(parent: &header_span, "Image Processing", file_name);
+            task_span.pb_set_style(
+                &ProgressStyle::with_template("{spinner} Processing {msg}\n{wide_bar} {pos}/{len}")
+                    .map_err(|e| anyhow!("Tracing progress template generate failed {e}"))?,
+            );
+            task_span.pb_set_message(&file_name);
+
             let _guard = task_span.enter();
 
             tracing::info!("Processing {}", file_name);
@@ -972,12 +978,14 @@ pub async fn split_images_with_label_filter(
             let (width, height) = (size.width, size.height);
             let y_count = height / target_height as i32;
             let x_count = width / target_width as i32;
-            // let mut labels_map = HashMap::<String, Mat>::new();
+
+            task_span.pb_set_length((y_count * x_count * 2) as u64);
 
             // Crop horizontally from left
             for row_index in 0..y_count {
                 for col_index in 0..x_count {
                     let image_id = format!("{}_LTR_x{}_y{}", image_id, col_index, row_index);
+                    task_span.pb_inc(1);
                     if !valid_name_set.contains(&image_id) {
                         continue;
                     }
@@ -1021,6 +1029,7 @@ pub async fn split_images_with_label_filter(
             for row_index in 0..y_count {
                 for col_index in 0..x_count {
                     let image_id = format!("{}_RTL_x{}_y{}", image_id, col_index, row_index);
+                    task_span.pb_inc(1);
                     if !valid_name_set.contains(&image_id) {
                         continue;
                     }
@@ -1058,11 +1067,8 @@ pub async fn split_images_with_label_filter(
             }
             tracing::info!("Image {} RTL iteration done", image_id);
             tracing::info!("Image {} process done", image_id);
-            tracing::info!(
-                parent: &header_span,
-                indicatif.pb_inc = 1,
-                "Image {file_name} finished"
-            );
+
+            header_span.pb_inc(1);
 
             Ok(())
         });
