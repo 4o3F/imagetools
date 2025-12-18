@@ -390,21 +390,20 @@ pub async fn rgb2class(dataset_path: &String, rgb_list: &str) {
             .expect_or_log("Failed to create directory");
     }
 
-    let transform_map = Arc::new(RwLock::new(HashMap::<[u8; 3], u8>::new()));
-    {
-        // Split RGB list
-        for (class_id, rgb) in rgb_list.split(";").enumerate() {
-            let mut rgb_vec: Vec<u8> = vec![];
-            for splited in rgb.split(',') {
-                let splited = splited.parse::<u8>().unwrap();
-                rgb_vec.push(splited);
-            }
+    let mut transform_map = HashMap::<[u8; 3], u8>::new();
 
-            transform_map
-                .write()
-                .insert([rgb_vec[0], rgb_vec[1], rgb_vec[2]], class_id as u8);
+    // Split RGB list
+    for (class_id, rgb) in rgb_list.split(";").enumerate() {
+        let mut rgb_vec: Vec<u8> = vec![];
+        for splited in rgb.split(',') {
+            let splited = splited.parse::<u8>().unwrap();
+            rgb_vec.push(splited);
         }
+
+        transform_map.insert([rgb_vec[0], rgb_vec[1], rgb_vec[2]], class_id as u8);
     }
+
+    let transform_map = Arc::new(transform_map);
 
     let mut threads = JoinSet::new();
     let sem = Arc::new(Semaphore::new(
@@ -439,7 +438,7 @@ pub async fn rgb2class(dataset_path: &String, rgb_list: &str) {
                             .expect_or_log("Cvt color to RGB error")
                     });
                 }
-                let transform_map = transform_map.read().clone();
+                let transform_map = transform_map.clone();
 
                 img.iter_mut::<Vec3b>()
                     .unwrap()

@@ -5,6 +5,7 @@ use std::{
     sync::{Arc, RwLock},
 };
 
+use anyhow::{anyhow, bail, Context, Result};
 use indicatif::ProgressStyle;
 use parking_lot::Mutex;
 use rayon::prelude::*;
@@ -857,38 +858,38 @@ pub async fn split_images_with_label_filter(
     labels_path: &String,
     target_height: &u32,
     target_width: &u32,
-) {
-    let valid_name_set: Arc<RwLock<HashSet<String>>> = Arc::new(RwLock::new(HashSet::new()));
+) -> Result<()> {
+    let mut valid_name_set = HashSet::<String>::new();
 
-    let mut valid_name_set_writer = valid_name_set.write().unwrap();
-    fs::read_dir(labels_path)
-        .unwrap()
-        .map(|e| e.unwrap().path())
-        .for_each(|e| {
-            let name = e.file_stem().unwrap().to_str().unwrap().to_string();
-            valid_name_set_writer.insert(name);
-        });
-    drop(valid_name_set_writer);
+    for entry in fs::read_dir(labels_path)? {
+        let path = entry?.path();
+        if let Some(name) = path.file_stem().map(|s| s.to_string_lossy()) {
+            valid_name_set.insert(name.into_owned());
+        } else {
+            bail!("Failed to read file stem, illigal path");
+        }
+    }
+    let valid_name_set = Arc::new(valid_name_set);
 
     let image_entries: Vec<PathBuf>;
-
     let images_output_path: String;
-
     let images_path = PathBuf::from(images_path.as_str());
 
     if images_path.is_dir() {
         image_entries = fs::read_dir(&images_path)
-            .unwrap()
-            .map(|e| e.unwrap().path())
-            .collect();
-
-        images_output_path = format!("{}/output/", images_path.to_str().unwrap());
+            .context(format!("Failed to read directory: {:?}", images_path))?
+            .map(|e| e.map(|e| e.path()))
+            .collect::<Result<Vec<_>, _>>()?;
+        images_output_path = images_path.join("output").to_string_lossy().into_owned();
     } else {
         image_entries = vec![images_path.clone()];
-        images_output_path = format!(
-            "{}/output/labels/",
-            images_path.parent().unwrap().to_str().unwrap()
-        );
+        images_output_path = images_path
+            .parent()
+            .ok_or(anyhow!("Failed to get parent dir"))?
+            .join("output")
+            .join("labels")
+            .to_string_lossy()
+            .into_owned();
     }
 
     let sem = Arc::new(Semaphore::new(
@@ -905,11 +906,20 @@ pub async fn split_images_with_label_filter(
             if e.kind() == std::io::ErrorKind::AlreadyExists {
                 tracing::info!("Image output directory already exists");
             } else {
-                tracing::error!("Failed to create directory: {}", e);
-                return ();
+                bail!("Failed to create directory: {}", e);
             }
         }
     }
+
+    let header_span = info_span!("split_images_threads");
+    header_span.pb_set_style(
+        &ProgressStyle::with_template("{spinner} Processing {msg}\n{wide_bar} {pos}/{len}")
+            .unwrap(),
+    );
+    header_span.pb_set_length(image_entries.len() as u64);
+    header_span.pb_set_message("starting...");
+
+    let header_span_enter = header_span.enter();
 
     // Image Processing
     let mut image_extension = None;
@@ -921,43 +931,54 @@ pub async fn split_images_with_label_filter(
         if image_extension.is_none() {
             let extension = entry
                 .extension()
-                .unwrap()
+                .ok_or(anyhow!("Failed to get file extension"))?
                 .to_os_string()
                 .into_string()
-                .unwrap();
+                .map_err(|e| anyhow!("Failed to convert os string {:?}", e))?;
             image_extension = Some(extension);
         }
 
-        let permit = Arc::clone(&sem);
         let target_width = *target_width;
         let target_height = *target_height;
         let valid_name_set = Arc::clone(&valid_name_set);
         let image_extension = image_extension.clone();
-
         let images_output_path = images_output_path.clone();
-        threads.spawn(async move {
-            let _ = permit.acquire().await.unwrap();
-            tracing::info!(
-                "Processing {}",
-                entry.file_name().unwrap().to_str().unwrap()
-            );
-            let image_id = entry.file_stem().unwrap().to_str().unwrap().to_string();
-            let img =
-                imgcodecs::imread(entry.to_str().unwrap(), imgcodecs::IMREAD_UNCHANGED).unwrap();
 
-            let size = img.size().unwrap();
+        let header_span = header_span.clone();
+
+        threads.spawn_blocking(move || -> anyhow::Result<()> {
+            let file_name = entry
+                .file_name()
+                .ok_or(anyhow!("Failed to get file name"))?
+                .to_string_lossy()
+                .into_owned();
+            let task_span = info_span!(parent: &header_span, "Image Processing", file_name);
+            let _guard = task_span.enter();
+
+            tracing::info!("Processing {}", file_name);
+            let image_id = match entry.file_stem().map(|s| s.to_string_lossy()) {
+                Some(id) => id.into_owned(),
+                None => bail!(
+                    "Failed to get image id for file {}",
+                    entry.as_path().to_string_lossy().into_owned()
+                ),
+            };
+            let img = imgcodecs::imread(
+                entry.to_str().ok_or(anyhow!("Failed to get entry path"))?,
+                imgcodecs::IMREAD_UNCHANGED,
+            )?;
+
+            let size = img.size()?;
             let (width, height) = (size.width, size.height);
             let y_count = height / target_height as i32;
             let x_count = width / target_width as i32;
             // let mut labels_map = HashMap::<String, Mat>::new();
 
             // Crop horizontally from left
-            let row_iter = ProgressAdaptor::new(0..y_count);
-            let row_progress = row_iter.items_processed();
-            row_iter.for_each(|row_index| {
+            for row_index in 0..y_count {
                 for col_index in 0..x_count {
                     let image_id = format!("{}_LTR_x{}_y{}", image_id, col_index, row_index);
-                    if !valid_name_set.read().unwrap().contains(&image_id) {
+                    if !valid_name_set.contains(&image_id) {
                         continue;
                     }
                     let cropped = core::Mat::roi(
@@ -969,7 +990,7 @@ pub async fn split_images_with_label_filter(
                             target_height as i32,
                         ),
                     )
-                    .unwrap();
+                    .map_err(|e| anyhow!("Crop ROI error, {e}"))?;
 
                     imgcodecs::imwrite(
                         &format!(
@@ -981,27 +1002,26 @@ pub async fn split_images_with_label_filter(
                         &cropped,
                         &core::Vector::new(),
                     )
-                    .unwrap();
+                    .map_err(|e| anyhow!("Image write failed, {e}"))?;
+
+                    if row_index != 0 && row_index % 10 == 0 {
+                        tracing::info!(
+                            "Image {} LTR Row {} / {} done",
+                            image_id,
+                            row_index,
+                            y_count
+                        );
+                    }
                 }
-                if row_progress.get() != 0 && row_progress.get() % 10 == 0 {
-                    tracing::info!(
-                        "Image {} LTR Row {} / {} done",
-                        image_id,
-                        row_progress.get(),
-                        y_count
-                    );
-                }
-            });
+            }
 
             tracing::info!("Label {} LTR iteration done", image_id);
 
             // Crop horizontally from right
-            let row_iter = ProgressAdaptor::new(0..y_count);
-            let row_progress = row_iter.items_processed();
-            row_iter.for_each(|row_index| {
+            for row_index in 0..y_count {
                 for col_index in 0..x_count {
                     let image_id = format!("{}_RTL_x{}_y{}", image_id, col_index, row_index);
-                    if !valid_name_set.read().unwrap().contains(&image_id) {
+                    if !valid_name_set.contains(&image_id) {
                         continue;
                     }
                     let cropped = core::Mat::roi(
@@ -1013,7 +1033,8 @@ pub async fn split_images_with_label_filter(
                             target_height as i32,
                         ),
                     )
-                    .unwrap();
+                    .map_err(|e| anyhow!("Crop ROI error, {e}"))?;
+
                     imgcodecs::imwrite(
                         &format!(
                             "{}/{}.{}",
@@ -1024,24 +1045,33 @@ pub async fn split_images_with_label_filter(
                         &cropped,
                         &core::Vector::new(),
                     )
-                    .unwrap();
+                    .map_err(|e| anyhow!("Image write failed, {e}"))?;
                 }
-                if row_progress.get() != 0 && row_progress.get() % 10 == 0 {
+                if row_index != 0 && row_index % 10 == 0 {
                     tracing::info!(
                         "Image {} RTL Row {} / {} done",
                         image_id,
-                        row_progress.get(),
+                        row_index,
                         y_count
                     );
                 }
-            });
+            }
             tracing::info!("Image {} RTL iteration done", image_id);
-
             tracing::info!("Image {} process done", image_id);
+            tracing::info!(
+                parent: &header_span,
+                indicatif.pb_inc = 1,
+                "Image {file_name} finished"
+            );
+
+            Ok(())
         });
     }
 
     while threads.join_next().await.is_some() {}
+
+    drop(header_span_enter);
+    Ok(())
 }
 
 pub async fn stich_images(splited_images: &String, target_height: &i32, target_width: &i32) {

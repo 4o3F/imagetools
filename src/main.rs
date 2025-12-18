@@ -133,7 +133,7 @@ enum CommonCommands {
 
         #[arg(long = "width", help = "Width for each split")]
         target_width: u32,
-        
+
         /// If set to true, the RGB value in RGB list is considered valid
         #[arg(short, help = "Use valid RGB filter mode", default_value = "false", action = ArgAction::SetTrue)]
         valid_rgb_mode: bool,
@@ -552,7 +552,8 @@ async fn main() {
                     target_height,
                     target_width,
                 )
-                .await;
+                .await
+                .unwrap_or_log();
             }
             CommonCommands::ProcessDatasetWithRGBList {
                 dataset_path,
