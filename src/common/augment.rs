@@ -952,7 +952,7 @@ pub async fn split_images_with_label_filter(
                 .ok_or(anyhow!("Failed to get file name"))?
                 .to_string_lossy()
                 .into_owned();
-            let task_span = info_span!(parent: &header_span, "Image Processing", file_name);
+            let task_span = info_span!(parent: &header_span, "Image Processing");
             task_span.pb_set_style(
                 &ProgressStyle::with_template("{spinner} Processing {msg}\n{wide_bar} {pos}/{len}")
                     .map_err(|e| anyhow!("Tracing progress template generate failed {e}"))?,
@@ -973,6 +973,8 @@ pub async fn split_images_with_label_filter(
                 entry.to_str().ok_or(anyhow!("Failed to get entry path"))?,
                 imgcodecs::IMREAD_UNCHANGED,
             )?;
+
+            tracing::info!("Img {} loaded with channel {}", file_name, img.channels());
 
             let size = img.size()?;
             let (width, height) = (size.width, size.height);
