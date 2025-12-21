@@ -946,7 +946,14 @@ pub async fn split_images_with_label_filter(
 
         let header_span = header_span.clone();
 
+        let permit = sem
+            .clone()
+            .acquire_owned()
+            .await
+            .context("Semaphore closed")?;
+
         threads.spawn_blocking(move || -> anyhow::Result<()> {
+            let _permit = permit;
             let file_name = entry
                 .file_name()
                 .ok_or(anyhow!("Failed to get file name"))?
@@ -1025,7 +1032,7 @@ pub async fn split_images_with_label_filter(
                 }
             }
 
-            tracing::info!("Label {} LTR iteration done", image_id);
+            tracing::info!("Image {} LTR iteration done", image_id);
 
             // Crop horizontally from right
             for row_index in 0..y_count {
