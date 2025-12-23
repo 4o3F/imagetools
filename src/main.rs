@@ -503,7 +503,9 @@ async fn main() {
                 new_color,
                 dataset_path,
             } => {
-                common::remap::remap_background_color(valid_colors, new_color, dataset_path).await;
+                common::remap::remap_background_color(valid_colors, new_color, dataset_path)
+                    .await
+                    .unwrap_or_log();
             }
             CommonCommands::SplitImages {
                 dataset_path,
@@ -580,7 +582,9 @@ async fn main() {
                 dataset_path,
                 rgb_list,
             } => {
-                common::remap::class2rgb(dataset_path, rgb_list).await;
+                common::remap::class2rgb(dataset_path, rgb_list)
+                    .await
+                    .unwrap_or_log();
             }
             CommonCommands::ResizeImages {
                 dataset_path,
@@ -600,7 +604,9 @@ async fn main() {
                 dataset_path,
                 rgb_list,
             } => {
-                common::remap::rgb2class(dataset_path, rgb_list).await;
+                common::remap::rgb2class(dataset_path, rgb_list)
+                    .await
+                    .unwrap_or_log();
             }
             CommonCommands::GenerateDatasetCSV {
                 dataset_path,
