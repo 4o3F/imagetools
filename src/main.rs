@@ -494,7 +494,9 @@ async fn main() {
                 new_color,
                 dataset_path,
             } => {
-                common::remap::remap_color(original_color, new_color, dataset_path).await;
+                common::remap::remap_color(original_color, new_color, dataset_path)
+                    .await
+                    .unwrap_or_log();
             }
             CommonCommands::MapBackgroundColor {
                 valid_colors,
