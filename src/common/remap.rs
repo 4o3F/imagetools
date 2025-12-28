@@ -1,9 +1,19 @@
 use anyhow::{anyhow, bail, Context, Result};
 use indicatif::ProgressStyle;
 use opencv::{
-    core::{MatTrait, MatTraitConst, MatTraitManual, ModifyInplace, Vec3b, Vector},
+    core::{
+        Mat, MatTrait, MatTraitConst, MatTraitConstManual, MatTraitManual, ModifyInplace, Vec3b,
+        Vector, CV_8UC3,
+    },
     imgcodecs::{self, imread, imwrite},
     imgproc::{self},
+};
+use rayon::{
+    iter::{
+        IndexedParallelIterator, IntoParallelRefIterator, IntoParallelRefMutIterator,
+        ParallelIterator,
+    },
+    slice::{ParallelSlice, ParallelSliceMut},
 };
 
 use std::{collections::HashMap, fs, path::PathBuf, sync::Arc};
@@ -314,7 +324,20 @@ pub async fn class2rgb(dataset_path: &String, rgb_list: &str) -> Result<()> {
         }
     }
 
-    let transform_map = Arc::new(transform_map);
+    let mut transform_platte = vec![
+        Vec3b::default();
+        *transform_map
+            .keys()
+            .max()
+            .ok_or(anyhow!("Empty transform map"))? as usize
+            + 1
+    ];
+
+    for (k, v) in transform_map {
+        transform_platte[k as usize] = v;
+    }
+
+    let transform_platte = Arc::new(transform_platte);
 
     let mut threads = JoinSet::new();
     let sem = Arc::new(Semaphore::new(
@@ -332,43 +355,71 @@ pub async fn class2rgb(dataset_path: &String, rgb_list: &str) -> Result<()> {
 
     let header_span_enter = header_span.enter();
 
+    tracing::info!("Process {} files", entries.len());
+
     for entry in entries {
         if !entry.is_file() {
             continue;
         }
         let header_span = header_span.clone();
-        let transform_map = Arc::clone(&transform_map);
+        let transform_platte = Arc::clone(&transform_platte);
 
         let permit = sem.clone().acquire_owned().await?;
 
         threads.spawn_blocking(move || -> Result<()> {
             let _permit = permit;
+
             let file_name = entry
                 .file_name()
                 .ok_or(anyhow!("Failed to get file name"))?
                 .to_string_lossy()
                 .into_owned();
 
-            let mut img = imread(
-                &entry.to_str().ok_or(anyhow!("Failed to get entry path"))?,
+            let task_span = info_span!(parent: &header_span, "Image Processing");
+            task_span.pb_set_style(
+                &ProgressStyle::with_template("{spinner} Processing {msg}\n{wide_bar} {pos}/{len}")
+                    .map_err(|e| anyhow!("Tracing progress template generate failed {e}"))?,
+            );
+            task_span.pb_set_message(&file_name);
+
+            let _guard = task_span.enter();
+
+            let img = imread(
+                entry.to_str().ok_or(anyhow!("Failed to get entry path"))?,
                 imgcodecs::IMREAD_GRAYSCALE,
             )?;
 
-            unsafe {
-                img.modify_inplace(|input, output| {
-                    opencv::imgproc::cvt_color(input, output, imgproc::COLOR_GRAY2RGB, 0)
-                        .context("Cvt grayscale to RGB error")
-                })?;
+            if img.empty() {
+                bail!("Empty image read");
             }
+            let rows = img.rows();
+            let cols = img.cols();
 
-            for (_, data) in img.iter_mut::<Vec3b>()? {
-                *data = *transform_map
-                    .get(&data[0])
-                    .ok_or(anyhow!("Unknown class {}", data[0]))?;
-            }
+            let mut output = Mat::new_rows_cols_with_default(
+                rows,
+                cols,
+                CV_8UC3,
+                opencv::core::Scalar::all(0.0),
+            )?;
+
+            let src_slice: &[u8] = img.data_typed()?;
+            let dst_slice: &mut [Vec3b] = output.data_typed_mut()?;
+
+            let chunk = 1_000_000usize;
+            task_span.pb_set_length((rows * cols) as u64 / (chunk as u64));
+
+            dst_slice
+                .par_chunks_mut(chunk)
+                .zip(src_slice.par_chunks(chunk))
+                .for_each(|(out_c, in_c)| {
+                    for (o, &id) in out_c.iter_mut().zip(in_c.iter()) {
+                        *o = transform_platte[id as usize];
+                    }
+                    task_span.pb_inc(1);
+                });
 
             unsafe {
-                img.modify_inplace(|input, output| {
+                output.modify_inplace(|input, output| {
                     opencv::imgproc::cvt_color(input, output, imgproc::COLOR_RGB2BGR, 0)
                         .context("Cvt RGB to BGR error")
                 })?;
@@ -382,24 +433,22 @@ pub async fn class2rgb(dataset_path: &String, rgb_list: &str) -> Result<()> {
                     .join(&file_name)
                     .to_str()
                     .ok_or(anyhow!("Failed to convert path to string"))?,
-                &img,
+                &output,
                 &Vector::new(),
             )?;
             tracing::info!("{} finished", file_name);
-            Span::current().pb_set_message(&format!("{}", file_name));
+            Span::current().pb_set_message(&file_name);
             header_span.pb_inc(1);
             Ok(())
         });
     }
     while let Some(result) = threads.join_next().await {
-        if let Err(err) = result {
-            bail!("{:?}", err);
-        }
+        result??;
     }
     std::mem::drop(header_span_enter);
     tracing::info!("All done");
     tracing::info!(
-        "Saved to {}/output/",
+        "Saved to {}",
         dataset_path
             .to_str()
             .ok_or(anyhow!("Failed to convert dataset_path to string"))?

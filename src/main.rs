@@ -473,6 +473,8 @@ async fn main() {
 
     tracing::info!("Using {} threads", cli.thread);
 
+    std::env::set_var("OPENCV_IO_MAX_IMAGE_PIXELS", i64::MAX.to_string());
+
     match &cli.command {
         Some(Commands::Common { command }) => match command {
             CommonCommands::CropRectangle {
