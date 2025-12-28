@@ -52,9 +52,8 @@ pub async fn resize_images(
 
     for entry in entries {
         let permit = Arc::clone(&semaphore);
-        let target_width = target_width.clone();
-        let target_height = target_height.clone();
-        let filter = filter.clone();
+        let target_width = *target_width;
+        let target_height = *target_height;
         threads.spawn(async move {
             let _permit = permit.acquire().await.unwrap();
             let img = imread(entry.to_str().unwrap(), imgcodecs::IMREAD_COLOR)
@@ -144,7 +143,7 @@ pub async fn strip_image_edge(
     tracing::info!("Image {} done", save_path);
 }
 
-pub fn crop_rectangle_region(source_path: &String, target_path: &String, corners: &String) {
+pub fn crop_rectangle_region(source_path: &String, target_path: &str, corners: &str) {
     let cords: Vec<(i32, i32)> = corners
         .split(';')
         .map(|s| {
@@ -161,7 +160,7 @@ pub fn crop_rectangle_region(source_path: &String, target_path: &String, corners
         .collect();
     if cords.len() != 2 {
         tracing::error!("Invalid rectangle coordinates");
-        return ();
+        return ;
     }
     tracing::info!("Rectangle coordinates: {:?}", cords);
     let img = imgcodecs::imread(source_path, imgcodecs::IMREAD_UNCHANGED).unwrap();
@@ -177,7 +176,7 @@ pub fn crop_rectangle_region(source_path: &String, target_path: &String, corners
         ),
     )
     .unwrap();
-    imgcodecs::imwrite(&target_path, &cropped_img, &core::Vector::new()).unwrap();
+    imgcodecs::imwrite(target_path, &cropped_img, &core::Vector::new()).unwrap();
     tracing::info!("Image {} done", source_path);
 }
 
@@ -212,8 +211,8 @@ pub fn normalize(dataset_path: &String, target_max: &f64, target_min: &f64) {
         core::normalize(
             &img,
             &mut dst,
-            target_min.clone(),
-            target_max.clone(),
+            *target_min,
+            *target_max,
             core::NORM_MINMAX,
             -1,
             &core::no_array(),

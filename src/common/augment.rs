@@ -78,7 +78,7 @@ pub async fn split_images(dataset_path: &String, target_height: &u32, target_wid
                 .expect_or_log(format!("Failed to read image: {}", entry_path).as_str());
             if img.empty() {
                 tracing::error!("Failed to read image: {} image is empty", entry_path);
-                return ();
+                return;
             }
             let size = img.size().expect_or_log("Failed to get image size");
             tracing::trace!("Image {} size {:?}", file_name, size);
@@ -373,12 +373,12 @@ pub fn check_valid_pixel_count(
             let pixel = row.at_2d::<core::Vec3b>(0, col_index).unwrap();
             match mode {
                 true => {
-                    if rgb_list.contains(&pixel) {
+                    if rgb_list.contains(pixel) {
                         row_count += 1;
                     }
                 }
                 false => {
-                    if !rgb_list.contains(&pixel) {
+                    if !rgb_list.contains(pixel) {
                         row_count += 1;
                     }
                 }
@@ -442,7 +442,7 @@ pub async fn process_dataset_with_rgblist(
     );
     if !(label_path.is_dir() && image_path.is_dir()) {
         tracing::error!("Image and label path should be both directories and exist.");
-        return ();
+        return;
     }
 
     if image_path.is_dir() {
@@ -490,7 +490,7 @@ pub async fn process_dataset_with_rgblist(
                 tracing::info!("Image output directory already exists");
             } else {
                 tracing::error!("Failed to create directory: {}", e);
-                return ();
+                return;
             }
         }
     }
@@ -504,7 +504,7 @@ pub async fn process_dataset_with_rgblist(
                 tracing::info!("Label output directory already exists");
             } else {
                 tracing::error!("Failed to create directory: {}", e);
-                return ();
+                return;
             }
         }
     }
@@ -537,7 +537,7 @@ pub async fn process_dataset_with_rgblist(
             async move {
                 let _permit = sem.acquire().await.unwrap();
                 let mut img =
-                    imgcodecs::imread(&path.to_str().unwrap(), imgcodecs::IMREAD_COLOR).unwrap();
+                    imgcodecs::imread(path.to_str().unwrap(), imgcodecs::IMREAD_COLOR).unwrap();
                 if img.channels() != 3 {
                     tracing::error!(
                         "Image {} is not RGB format (has {}), skipping!",
@@ -572,8 +572,7 @@ pub async fn process_dataset_with_rgblist(
                     )
                     .unwrap();
                 }
-                Span::current()
-                    .pb_set_message(&format!("{}", path.file_name().unwrap().to_str().unwrap()));
+                Span::current().pb_set_message(path.file_name().unwrap().to_str().unwrap());
                 Span::current().pb_inc(1);
             }
             .in_current_span(),
@@ -605,8 +604,8 @@ pub async fn process_dataset_with_rgblist(
         threads.spawn(
             async move {
                 let _permit = sem.acquire().await.unwrap();
-                let img = imgcodecs::imread(&path.to_str().unwrap(), imgcodecs::IMREAD_UNCHANGED)
-                    .unwrap();
+                let img =
+                    imgcodecs::imread(path.to_str().unwrap(), imgcodecs::IMREAD_UNCHANGED).unwrap();
 
                 let img = BoxedRef::from(img);
                 if valid_id
@@ -626,8 +625,7 @@ pub async fn process_dataset_with_rgblist(
                     )
                     .unwrap();
                 }
-                Span::current()
-                    .pb_set_message(&format!("{}", path.file_name().unwrap().to_str().unwrap()));
+                Span::current().pb_set_message(path.file_name().unwrap().to_str().unwrap());
                 Span::current().pb_inc(1);
             }
             .in_current_span(),
@@ -640,7 +638,7 @@ pub async fn process_dataset_with_rgblist(
 }
 
 pub async fn split_images_with_rgb_filter(
-    images_path: &String,
+    images_path: &str,
     target_height: &u32,
     target_width: &u32,
     rgb_list_str: &str,
@@ -669,7 +667,7 @@ pub async fn split_images_with_rgb_filter(
 
     let label_output_path: String;
 
-    let label_path = PathBuf::from(images_path.as_str());
+    let label_path = PathBuf::from(images_path);
 
     if label_path.is_dir() {
         label_entries = fs::read_dir(&label_path)
@@ -701,7 +699,7 @@ pub async fn split_images_with_rgb_filter(
                 tracing::info!("Label output directory already exists");
             } else {
                 tracing::error!("Failed to create directory: {}", e);
-                return ();
+                return;
             }
         }
     }
@@ -854,7 +852,7 @@ pub async fn split_images_with_rgb_filter(
 }
 
 pub async fn split_images_with_label_filter(
-    images_path: &String,
+    images_path: &str,
     labels_path: &String,
     target_height: &u32,
     target_width: &u32,
@@ -873,7 +871,7 @@ pub async fn split_images_with_label_filter(
 
     let image_entries: Vec<PathBuf>;
     let images_output_path: String;
-    let images_path = PathBuf::from(images_path.as_str());
+    let images_path = PathBuf::from(images_path);
 
     if images_path.is_dir() {
         image_entries = fs::read_dir(&images_path)
@@ -1110,12 +1108,11 @@ pub async fn stich_images(splited_images: &String, target_height: &i32, target_w
 
         // Image name, direction, x, y
         let mut info = Vec::new();
-        while let Some(m) = re.captures(file_name) {
+        if let Some(m) = re.captures(file_name) {
             info.push(m.get(1).unwrap().as_str());
             info.push(m.get(2).unwrap().as_str());
             info.push(m.get(3).unwrap().as_str());
             info.push(m.get(4).unwrap().as_str());
-            break;
         }
 
         // tracing::trace!("Captures {:?}", re.captures(file_name));
@@ -1131,10 +1128,8 @@ pub async fn stich_images(splited_images: &String, target_height: &i32, target_w
         let current_img_size = img.size().unwrap();
         if size.is_none() {
             size = Some((current_img_size.width, current_img_size.height));
-        } else {
-            if current_img_size.width != size.unwrap().0
-                || current_img_size.height != size.unwrap().1
-            {
+        } else if let Some((width, height)) = size {
+            if current_img_size.width != width || current_img_size.height != height {
                 tracing::error!(
                     "Image {} size is not consistent",
                     entry.file_name().to_str().unwrap()

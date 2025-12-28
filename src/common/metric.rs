@@ -10,11 +10,11 @@ use std::{
 };
 use tracing_unwrap::ResultExt;
 
-pub fn calc_iou(target_img: &String, gt_img: &String) {
+pub fn calc_iou(target_img: &str, gt_img: &str) {
     tracing::info!("Start loading images");
-    let target_img = imgcodecs::imread(&target_img, imgcodecs::IMREAD_COLOR)
+    let target_img = imgcodecs::imread(target_img, imgcodecs::IMREAD_COLOR)
         .expect_or_log("Open output image error");
-    let gt_img = imgcodecs::imread(&gt_img, imgcodecs::IMREAD_COLOR)
+    let gt_img = imgcodecs::imread(gt_img, imgcodecs::IMREAD_COLOR)
         .expect_or_log("Open ground truth image error");
 
     tracing::info!("Image loaded");
@@ -23,8 +23,9 @@ pub fn calc_iou(target_img: &String, gt_img: &String) {
         return;
     }
 
-    let intersection: Arc<Mutex<HashMap<(u8, u8, u8), i64>>> = Arc::new(Mutex::new(HashMap::new()));
-    let union: Arc<Mutex<HashMap<(u8, u8, u8), i64>>> = Arc::new(Mutex::new(HashMap::new()));
+    let intersection = Arc::new(Mutex::new(HashMap::new()));
+    let union = Arc::new(Mutex::new(HashMap::new()));
+    #[allow(clippy::type_complexity)]
     let confusion_matrix: Arc<Mutex<HashMap<(u8, u8, u8), HashMap<(u8, u8, u8), i64>>>> =
         Arc::new(Mutex::new(HashMap::new()));
 
@@ -37,6 +38,7 @@ pub fn calc_iou(target_img: &String, gt_img: &String) {
     row_iter.for_each(|i| {
         let mut row_intersection: HashMap<(u8, u8, u8), i64> = HashMap::new();
         let mut row_union: HashMap<(u8, u8, u8), i64> = HashMap::new();
+        #[allow(clippy::type_complexity)]
         let mut row_confusion_matrix: HashMap<(u8, u8, u8), HashMap<(u8, u8, u8), i64>> =
             HashMap::new();
         for j in 0..cols {
@@ -58,9 +60,7 @@ pub fn calc_iou(target_img: &String, gt_img: &String) {
                     *row_intersection.entry(color1).or_insert(0) += 1;
                 }
 
-                let entry = row_confusion_matrix
-                    .entry(color2)
-                    .or_insert_with(HashMap::new);
+                let entry = row_confusion_matrix.entry(color2).or_default();
                 *entry.entry(color1).or_insert(0) += 1;
             }
         }
@@ -76,7 +76,7 @@ pub fn calc_iou(target_img: &String, gt_img: &String) {
             *union.entry(color).or_insert(0) += value;
         }
         for (color, value) in row_confusion_matrix.into_iter() {
-            let entry = confusion_matrix.entry(color).or_insert_with(HashMap::new);
+            let entry = confusion_matrix.entry(color).or_default();
             for (color2, value2) in value.into_iter() {
                 *entry.entry(color2).or_insert(0) += value2;
             }

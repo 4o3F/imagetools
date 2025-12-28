@@ -14,7 +14,7 @@ use serde::Serialize;
 use std::{
     collections::HashMap,
     fs,
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{Arc, Mutex},
 };
 use tokio::{sync::Semaphore, task::JoinSet};
@@ -24,7 +24,7 @@ use tracing_unwrap::{OptionExt, ResultExt};
 
 use crate::THREAD_POOL;
 
-fn check_semantic_segmentation_dataset(dataset_path: &PathBuf) -> bool {
+fn check_semantic_segmentation_dataset(dataset_path: &Path) -> bool {
     if !(dataset_path.join("images").is_dir() && dataset_path.join("labels").is_dir()) {
         tracing::error!(
             "Invalid dataset path: {}, should contain images and labels folders",
@@ -45,7 +45,6 @@ pub fn generate_dataset_csv(dataset_path: &String, train_ratio: &f32) {
 
     let mut images = fs::read_dir(dataset_path.join("images").clone())
         .unwrap()
-        .into_iter()
         .map(|x| x.unwrap().path())
         .filter(|x| x.is_file())
         .collect::<Vec<PathBuf>>();
@@ -54,7 +53,6 @@ pub fn generate_dataset_csv(dataset_path: &String, train_ratio: &f32) {
 
     let mut labels = fs::read_dir(dataset_path.join("labels").clone())
         .unwrap()
-        .into_iter()
         .map(|x| x.unwrap().path())
         .filter(|x| x.is_file())
         .collect::<Vec<PathBuf>>();
@@ -113,7 +111,6 @@ pub fn generate_dataset_json(dataset_path: &String, train_ratio: &f32) {
 
     let mut images = fs::read_dir(dataset_path.join("images").clone())
         .unwrap()
-        .into_iter()
         .map(|x| x.unwrap().path())
         .filter(|x| x.is_file())
         .collect::<Vec<PathBuf>>();
@@ -122,7 +119,6 @@ pub fn generate_dataset_json(dataset_path: &String, train_ratio: &f32) {
 
     let mut labels = fs::read_dir(dataset_path.join("labels").clone())
         .unwrap()
-        .into_iter()
         .map(|x| x.unwrap().path())
         .filter(|x| x.is_file())
         .collect::<Vec<PathBuf>>();
@@ -227,7 +223,6 @@ pub async fn generate_dataset_txt(dataset_path: &String, train_ratio: &f32) {
     let dataset_path = dataset_path.join("images");
     let entries = fs::read_dir(dataset_path.clone())
         .unwrap()
-        .into_iter()
         .map(|x| x.unwrap().path())
         .collect::<Vec<PathBuf>>();
 
@@ -327,7 +322,6 @@ pub async fn split_dataset(dataset_path: &String, train_ratio: &f32) {
     let dataset_path = dataset_path.join("images");
     let entries = fs::read_dir(dataset_path.clone())
         .unwrap()
-        .into_iter()
         .map(|x| x.unwrap().path())
         .collect::<Vec<PathBuf>>();
 
@@ -397,7 +391,7 @@ pub async fn split_dataset(dataset_path: &String, train_ratio: &f32) {
                 .display(),
         );
         fs::rename(
-            &entry
+            entry
                 .to_str()
                 .unwrap()
                 .to_string()
@@ -465,7 +459,7 @@ pub async fn split_dataset(dataset_path: &String, train_ratio: &f32) {
         );
 
         fs::rename(
-            &entry
+            entry
                 .to_str()
                 .unwrap()
                 .to_string()
@@ -554,8 +548,7 @@ pub async fn count_classes(dataset_path: &String) {
                 });
                 tracing::info!("Image {} done", entry.to_str().unwrap());
                 tracing::trace!("Image {} done", entry.to_str().unwrap());
-                Span::current()
-                    .pb_set_message(&format!("{}", entry.file_name().unwrap().to_str().unwrap()));
+                Span::current().pb_set_message(entry.file_name().unwrap().to_str().unwrap());
                 Span::current().pb_inc(1);
             }
             .instrument(header_span),
@@ -599,7 +592,7 @@ pub async fn count_classes(dataset_path: &String) {
     }
 }
 
-pub async fn count_rgb(dataset_path: &String, rgb_list: &String) {
+pub async fn count_rgb(dataset_path: &String, rgb_list: &str) {
     let mut entries: Vec<PathBuf> = Vec::new();
     let dataset_path = PathBuf::from(dataset_path);
     if dataset_path.is_file() {
@@ -682,8 +675,7 @@ pub async fn count_rgb(dataset_path: &String, rgb_list: &String) {
                     }
                 });
                 tracing::trace!("Image {} done", entry.to_str().unwrap());
-                Span::current()
-                    .pb_set_message(&format!("{}", entry.file_name().unwrap().to_str().unwrap()));
+                Span::current().pb_set_message(entry.file_name().unwrap().to_str().unwrap());
                 Span::current().pb_inc(1);
             }
             .instrument(header_span),
@@ -802,8 +794,8 @@ pub async fn calc_mean_std(dataset_path: &String) {
                 let mut mean_map = mean_map.lock().expect_or_log("Failed to lock mean map");
                 let mut std_map = std_map.lock().expect_or_log("Failed to lock std map");
                 for i in 1..=mean.len() {
-                    if !mean_map.contains_key(&i) {
-                        mean_map.insert(i, Vec::<f64>::new());
+                    if let std::collections::hash_map::Entry::Vacant(e) = mean_map.entry(i) {
+                        e.insert(Vec::<f64>::new());
                         std_map.insert(i, Vec::<f64>::new());
                     }
                     mean_map
@@ -827,8 +819,7 @@ pub async fn calc_mean_std(dataset_path: &String) {
                 *global_min_value = f64::min(*global_min_value, min_value);
                 *global_max_value = f64::max(*global_max_value, max_value);
 
-                Span::current()
-                    .pb_set_message(&format!("{}", entry.file_name().unwrap().to_str().unwrap()));
+                Span::current().pb_set_message(entry.file_name().unwrap().to_str().unwrap());
                 Span::current().pb_inc(1);
             }
             .in_current_span(),

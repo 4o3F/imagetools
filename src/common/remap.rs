@@ -9,10 +9,7 @@ use opencv::{
     imgproc::{self},
 };
 use rayon::{
-    iter::{
-        IndexedParallelIterator, IntoParallelRefIterator, IntoParallelRefMutIterator,
-        ParallelIterator,
-    },
+    iter::{IndexedParallelIterator, ParallelIterator},
     slice::{ParallelSlice, ParallelSliceMut},
 };
 
@@ -105,7 +102,7 @@ pub async fn remap_color(
                 .into_owned();
 
             let mut img = imread(
-                &entry.to_str().ok_or(anyhow!("Failed to get entry path"))?,
+                entry.to_str().ok_or(anyhow!("Failed to get entry path"))?,
                 imgcodecs::IMREAD_COLOR,
             )?;
             if img.channels() != 3 {
@@ -238,7 +235,7 @@ pub async fn remap_background_color(
                 .to_string_lossy()
                 .into_owned();
             let mut img = imread(
-                &entry.to_str().ok_or(anyhow!("Failed to get entry path"))?,
+                entry.to_str().ok_or(anyhow!("Failed to get entry path"))?,
                 imgcodecs::IMREAD_COLOR,
             )?;
             if img.channels() != 3 {
@@ -287,9 +284,9 @@ pub async fn remap_background_color(
     Ok(())
 }
 
-pub async fn class2rgb(dataset_path: &String, rgb_list: &str) -> Result<()> {
+pub async fn class2rgb(dataset_path: &str, rgb_list: &str) -> Result<()> {
     let mut entries: Vec<PathBuf> = Vec::new();
-    let dataset_path = PathBuf::from(dataset_path.as_str());
+    let dataset_path = PathBuf::from(dataset_path);
     if dataset_path.is_file() {
         entries.push(dataset_path.clone());
         fs::create_dir_all(
@@ -456,9 +453,9 @@ pub async fn class2rgb(dataset_path: &String, rgb_list: &str) -> Result<()> {
     Ok(())
 }
 
-pub async fn rgb2class(dataset_path: &String, rgb_list: &str) -> Result<()> {
+pub async fn rgb2class(dataset_path: &str, rgb_list: &str) -> Result<()> {
     let mut entries: Vec<PathBuf> = Vec::new();
-    let dataset_path = PathBuf::from(dataset_path.as_str());
+    let dataset_path = PathBuf::from(dataset_path);
     if dataset_path.is_file() {
         entries.push(dataset_path.clone());
         fs::create_dir_all(
@@ -524,7 +521,7 @@ pub async fn rgb2class(dataset_path: &String, rgb_list: &str) -> Result<()> {
                 .to_string_lossy()
                 .into_owned();
             let mut img = imread(
-                &entry.to_str().ok_or(anyhow!("Failed to get entry path"))?,
+                entry.to_str().ok_or(anyhow!("Failed to get entry path"))?,
                 imgcodecs::IMREAD_COLOR,
             )?;
             unsafe {
