@@ -206,12 +206,11 @@ enum CommonCommands {
 
     /// Resize all images in a given folder to a given size with a given filter
     ResizeImages {
-        #[arg(
-            short,
-            long,
-            help = "The path of the image / directory containing images"
-        )]
-        dataset_path: String,
+        #[arg(short, long, help = "The path of the image")]
+        input_path: String,
+
+        #[arg(short, long, help = "The path for saving the result")]
+        save_path: String,
 
         #[arg(long, help = "Target height")]
         height: i32,
@@ -398,6 +397,14 @@ enum CommonCommands {
 
         #[arg(short, long, help = "The path for the ground truth image")]
         gt_image: String,
+    },
+
+    /// Mask file names while maintaining dataset correspondense
+    MaskDataset {
+        #[arg(short, long, help = "The path for the image dir")]
+        image_dir: String,
+        #[arg(short, long, help = "The path for the label dir")]
+        label_dir: String,
     },
 }
 
@@ -589,12 +596,17 @@ async fn main() {
                     .unwrap_or_log();
             }
             CommonCommands::ResizeImages {
-                dataset_path,
+                input_path,
+                save_path,
                 height,
                 width,
                 filter,
             } => {
-                common::operation::resize_images(dataset_path, height, width, filter).await;
+                common::operation::resize::resize_images(
+                    input_path, save_path, height, width, filter,
+                )
+                .await
+                .unwrap_or_log();
             }
             CommonCommands::Rgb2Rle {
                 dataset_path,
@@ -679,6 +691,14 @@ async fn main() {
                 gt_image,
             } => {
                 common::metric::calc_iou(target_image, gt_image);
+            }
+            CommonCommands::MaskDataset {
+                image_dir,
+                label_dir,
+            } => {
+                common::dataset::mask::mask_dataset(image_dir, label_dir)
+                    .await
+                    .unwrap_or_log();
             }
         },
         Some(Commands::Yolo { command }) => match command {

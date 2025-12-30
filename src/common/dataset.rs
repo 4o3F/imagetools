@@ -720,7 +720,6 @@ pub async fn calc_mean_std(dataset_path: &String) {
         .into_iter()
         .map(|x| x.expect_or_log("Failed to iterate entries").path())
         .collect::<Vec<PathBuf>>();
-    // let entries = Arc::new(entries);
     let mut threads = JoinSet::new();
 
     let mean_map = Arc::new(Mutex::new(HashMap::<usize, Vec<f64>>::new()));
@@ -870,3 +869,5 @@ pub async fn calc_mean_std(dataset_path: &String) {
     tracing::info!("Max: {:?}", *max_value);
     tracing::info!("Dataset calculated");
 }
+
+pub mod mask;

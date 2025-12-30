@@ -9,6 +9,8 @@ use tracing_unwrap::{OptionExt, ResultExt};
 
 use crate::THREAD_POOL;
 
+#[deprecated]
+#[allow(dead_code)]
 pub async fn resize_images(
     dataset_path: &String,
     target_height: &i32,
@@ -160,7 +162,7 @@ pub fn crop_rectangle_region(source_path: &String, target_path: &str, corners: &
         .collect();
     if cords.len() != 2 {
         tracing::error!("Invalid rectangle coordinates");
-        return ;
+        return;
     }
     tracing::info!("Rectangle coordinates: {:?}", cords);
     let img = imgcodecs::imread(source_path, imgcodecs::IMREAD_UNCHANGED).unwrap();
@@ -235,3 +237,5 @@ pub fn normalize(dataset_path: &String, target_max: &f64, target_min: &f64) {
         tracing::info!("Image {} done", dst_path);
     }
 }
+
+pub mod resize;
