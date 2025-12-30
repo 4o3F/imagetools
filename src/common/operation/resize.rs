@@ -1,4 +1,4 @@
-use std::{fs, path::PathBuf, sync::Arc};
+use std::{fs, path::PathBuf};
 
 use anyhow::{anyhow, bail, Context, Result};
 use indicatif::ProgressStyle;
@@ -8,11 +8,8 @@ use opencv::{
     prelude::*,
 };
 use rayon::prelude::*;
-use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tracing::info_span;
 use tracing_indicatif::span_ext::IndicatifSpanExt;
-
-use crate::THREAD_POOL;
 
 /// Resize a multi-channel image using the given filter.
 /// Parallelized with rayon by splitting the destination image into chunks.
@@ -36,66 +33,27 @@ pub async fn resize_images(
                 .join("resize_output"),
         )?;
     } else {
-        in_entries = fs::read_dir(&in_path)?
-            .map(|x| x.map(|x| x.path()))
-            .collect::<Result<Vec<_>, _>>()?;
-
-        fs::create_dir_all(in_path.join("resize_output"))?;
+        bail!("This operation should only be applied to single file")
     }
 
     let out_path = save_path.to_owned();
     let h = *target_height;
     let w = *target_width;
     let filter = filter.to_string();
-
-    let sem = Arc::new(Semaphore::new(
-        (*THREAD_POOL
-            .read()
-            .map_err(|_| anyhow!("THREAD_POOL lock poisoned"))?)
-        .into(),
-    ));
-
-    let mut threads = tokio::task::JoinSet::new();
-
-    for entry in in_entries {
-        if !entry.is_file() {
-            tracing::warn!(
-                "Skipping non file path {}",
-                entry
-                    .as_path()
-                    .to_str()
-                    .ok_or(anyhow!("Failed to get path str"))?
-            );
-            continue;
-        }
-
-        let permit = sem
-            .clone()
-            .acquire_owned()
-            .await
-            .context("Semaphore closed")?;
-
-        let out_path = out_path.clone();
-        let filter = filter.clone();
-
-        threads.spawn_blocking(move || {
-            resize_images_sync(
-                entry
-                    .as_path()
-                    .to_str()
-                    .ok_or(anyhow!("Failed to get path str"))?,
-                out_path.as_str(),
-                h,
-                w,
-                filter.as_str(),
-                permit,
-            )
-        });
-    }
-
-    // tokio::task::spawn_blocking(move || )
-    //     .await
-    //     .context("spawn_blocking failed")?;
+    tokio::task::spawn_blocking(move || {
+        resize_images_sync(
+            in_path
+                .as_path()
+                .to_str()
+                .ok_or(anyhow!("Failed to get path str"))?,
+            &out_path,
+            h,
+            w,
+            &filter,
+        )
+    })
+    .await
+    .context("spawn_blocking failed")??;
     Ok(())
 }
 
@@ -106,9 +64,7 @@ fn resize_images_sync(
     target_height: i32,
     target_width: i32,
     filter: &str,
-    permit: OwnedSemaphorePermit,
 ) -> Result<()> {
-    let _permit = permit;
     if target_height <= 0 || target_width <= 0 {
         bail!("target dimensions must be positive");
     }
