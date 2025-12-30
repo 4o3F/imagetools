@@ -209,9 +209,6 @@ enum CommonCommands {
         #[arg(short, long, help = "The path of the image")]
         input_path: String,
 
-        #[arg(short, long, help = "The path for saving the result")]
-        save_path: String,
-
         #[arg(long, help = "Target height")]
         height: i32,
 
@@ -597,16 +594,13 @@ async fn main() {
             }
             CommonCommands::ResizeImages {
                 input_path,
-                save_path,
                 height,
                 width,
                 filter,
             } => {
-                common::operation::resize::resize_images(
-                    input_path, save_path, height, width, filter,
-                )
-                .await
-                .unwrap_or_log();
+                common::operation::resize::resize_images(input_path, height, width, filter)
+                    .await
+                    .unwrap_or_log();
             }
             CommonCommands::Rgb2Rle {
                 dataset_path,

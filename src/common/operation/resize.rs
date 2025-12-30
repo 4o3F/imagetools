@@ -15,7 +15,6 @@ use tracing_indicatif::span_ext::IndicatifSpanExt;
 /// Parallelized with rayon by splitting the destination image into chunks.
 pub async fn resize_images(
     src_path: &str,
-    save_path: &str,
     target_height: &i32,
     target_width: &i32,
     filter: &str,
@@ -36,7 +35,15 @@ pub async fn resize_images(
         bail!("This operation should only be applied to single file")
     }
 
-    let out_path = save_path.to_owned();
+    let out_path = in_path
+        .parent()
+        .ok_or(anyhow!("Failed to find parent dir for input path"))?
+        .join("resize_output")
+        .join(
+            in_path
+                .file_name()
+                .ok_or(anyhow!("Failed to get file name"))?,
+        );
     let h = *target_height;
     let w = *target_width;
     let filter = filter.to_string();
@@ -45,8 +52,11 @@ pub async fn resize_images(
             in_path
                 .as_path()
                 .to_str()
-                .ok_or(anyhow!("Failed to get path str"))?,
-            &out_path,
+                .ok_or(anyhow!("Failed to get input path str"))?,
+            out_path
+                .as_path()
+                .to_str()
+                .ok_or(anyhow!("Failed to get output path str"))?,
             h,
             w,
             &filter,
