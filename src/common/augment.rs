@@ -12,7 +12,12 @@ use rayon::prelude::*;
 use rayon_progress::ProgressAdaptor;
 use tokio::{sync::Semaphore, task::JoinSet};
 
-use opencv::{boxed_ref::BoxedRef, core, imgcodecs, imgproc::COLOR_BGR2RGB, prelude::*};
+use opencv::{
+    boxed_ref::BoxedRef,
+    core, imgcodecs,
+    imgproc::{COLOR_BGR2RGB, COLOR_RGB2BGR},
+    prelude::*,
+};
 use tracing::{info_span, Instrument, Span};
 use tracing_indicatif::span_ext::IndicatifSpanExt;
 use tracing_unwrap::{OptionExt, ResultExt};
@@ -740,7 +745,7 @@ pub async fn split_images_with_rgb_filter(
 
             if img.channels() != 3 {
                 tracing::error!(
-                    "Image {} is not RGB format (has {}), skipping!",
+                    "Image {} is not BGR format (has {}), skipping!",
                     entry.file_name().unwrap().to_str().unwrap(),
                     img.channels()
                 );
@@ -777,6 +782,13 @@ pub async fn split_images_with_rgb_filter(
 
                     let rgb_list = rgb_list.read().unwrap();
                     if check_valid_pixel_count(&cropped, &rgb_list, valid_rgb_mode).0 {
+                        let mut cropped_rgb = cropped.clone_pointee();
+                        unsafe {
+                            cropped_rgb.modify_inplace(|input, output| {
+                                opencv::imgproc::cvt_color(input, output, COLOR_RGB2BGR, 0)
+                                    .expect_or_log("Cvt RGB to BGR error")
+                            });
+                        }
                         imgcodecs::imwrite(
                             &format!(
                                 "{}/{}.{}",
@@ -784,7 +796,7 @@ pub async fn split_images_with_rgb_filter(
                                 label_id,
                                 label_extension.as_ref().unwrap()
                             ),
-                            &cropped,
+                            &cropped_rgb,
                             &core::Vector::new(),
                         )
                         .unwrap();
@@ -820,6 +832,13 @@ pub async fn split_images_with_rgb_filter(
                     .unwrap();
                     let rgb_list = rgb_list.read().unwrap();
                     if check_valid_pixel_count(&cropped, &rgb_list, valid_rgb_mode).0 {
+                        let mut cropped_rgb = cropped.clone_pointee();
+                        unsafe {
+                            cropped_rgb.modify_inplace(|input, output| {
+                                opencv::imgproc::cvt_color(input, output, COLOR_RGB2BGR, 0)
+                                    .expect_or_log("Cvt RGB to BGR error")
+                            });
+                        }
                         imgcodecs::imwrite(
                             &format!(
                                 "{}/{}.{}",
@@ -827,7 +846,7 @@ pub async fn split_images_with_rgb_filter(
                                 label_id,
                                 label_extension.as_ref().unwrap()
                             ),
-                            &cropped,
+                            &cropped_rgb,
                             &core::Vector::new(),
                         )
                         .unwrap();
