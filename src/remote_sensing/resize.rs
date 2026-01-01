@@ -70,7 +70,8 @@ pub async fn resize_images(src_path: &str, ratio: f32, blur_sigma: f32) -> Resul
                 opencv::imgcodecs::imread(input_path, opencv::imgcodecs::IMREAD_UNCHANGED)?;
 
             tracing::info!(
-                "Read image complete, {} channels available.",
+                "Read image {} complete, {} channels available.",
+                file_name,
                 img.channels()
             );
 
@@ -88,11 +89,13 @@ pub async fn resize_images(src_path: &str, ratio: f32, blur_sigma: f32) -> Resul
                 })?;
             }
 
+            tracing::info!("Image {} blur complete.", file_name);
+
             let original_size = img.size()?;
 
             let new_size = opencv::core::Size::new(
-                (f64::from(original_size.width) / f64::from(ratio)).round() as i32,
-                (f64::from(original_size.height) / f64::from(ratio)).round() as i32,
+                (f64::from(original_size.width) * f64::from(ratio)).round() as i32,
+                (f64::from(original_size.height) * f64::from(ratio)).round() as i32,
             );
 
             unsafe {
@@ -102,10 +105,20 @@ pub async fn resize_images(src_path: &str, ratio: f32, blur_sigma: f32) -> Resul
                 })?;
             }
 
+            tracing::info!("Image {} resize complete.", file_name);
+
             let output_path = output_dir.join(file_name);
             let output_path = output_path
                 .to_str()
                 .ok_or(anyhow!("Failed to generate output path string"))?;
+
+            tracing::info!(
+                "Writing type={}, channels={}, size={:?} to {}",
+                img.typ(),
+                img.channels(),
+                img.size()?,
+                output_path
+            );
 
             opencv::imgcodecs::imwrite(output_path, &img, &opencv::core::Vector::new())?;
 
