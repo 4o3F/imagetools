@@ -8,6 +8,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilte
 use tracing_unwrap::ResultExt;
 
 mod common;
+mod remote_sensing;
 mod yolo;
 
 static THREAD_POOL: LazyLock<RwLock<u16>> = LazyLock::new(|| RwLock::new(100));
@@ -34,6 +35,11 @@ enum Commands {
     Yolo {
         #[command(subcommand)]
         command: YoloCommands,
+    },
+    /// Remote sensing specific commands
+    RemoteSensing {
+        #[command(subcommand)]
+        command: RemoteSensingCommands,
     },
 }
 #[derive(Subcommand)]
@@ -446,6 +452,22 @@ enum YoloCommands {
     },
 }
 
+#[derive(Subcommand)]
+enum RemoteSensingCommands {
+    Resize {
+        #[arg(short, long, help = "Path of the src image")]
+        src_path: String,
+        #[arg(
+            short,
+            long,
+            help = "Resize ratio, the final H / W will become H*ratio / W*ratio"
+        )]
+        ratio: f32,
+        #[arg(short, long, help = "Gaussian blur sigma arg")]
+        blur_sigma: f32,
+    },
+}
+
 #[tokio::main]
 async fn main() {
     // Do tracing init
@@ -710,6 +732,13 @@ async fn main() {
                 rgb_list,
             } => {
                 yolo::convert::rgb2yolo(dataset_path, rgb_list).await;
+            }
+        },
+        Some(Commands::RemoteSensing { command }) => match command {
+            RemoteSensingCommands::Resize { src_path, ratio, blur_sigma } => {
+                remote_sensing::resize::resize_images(src_path, *ratio, *blur_sigma)
+                    .await
+                    .unwrap_or_log()
             }
         },
         None => {
