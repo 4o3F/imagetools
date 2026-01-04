@@ -454,7 +454,7 @@ enum YoloCommands {
 
 #[derive(Subcommand)]
 enum RemoteSensingCommands {
-    Resize {
+    ResizeImages {
         #[arg(short, long, help = "Path of the src image")]
         src_path: String,
         #[arg(
@@ -465,6 +465,16 @@ enum RemoteSensingCommands {
         ratio: f32,
         #[arg(short, long, help = "Gaussian blur sigma arg")]
         blur_sigma: f32,
+    },
+    ResizeLabels {
+        #[arg(short, long, help = "Path of the src label")]
+        src_path: String,
+        #[arg(
+            short,
+            long,
+            help = "Resize ratio, the final H / W will become H*ratio / W*ratio"
+        )]
+        ratio: f32,
     },
 }
 
@@ -735,8 +745,15 @@ async fn main() {
             }
         },
         Some(Commands::RemoteSensing { command }) => match command {
-            RemoteSensingCommands::Resize { src_path, ratio, blur_sigma } => {
-                remote_sensing::resize::resize_images(src_path, *ratio, *blur_sigma)
+            RemoteSensingCommands::ResizeImages {
+                src_path,
+                ratio,
+                blur_sigma,
+            } => remote_sensing::resize::resize_images(src_path, *ratio, *blur_sigma)
+                .await
+                .unwrap_or_log(),
+            RemoteSensingCommands::ResizeLabels { src_path, ratio } => {
+                remote_sensing::resize::resize_labels(src_path, *ratio)
                     .await
                     .unwrap_or_log()
             }
