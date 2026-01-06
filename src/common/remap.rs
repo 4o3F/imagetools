@@ -109,6 +109,13 @@ pub async fn remap_color(
                 bail!("Image {} is not RGB image", file_name);
             }
 
+            unsafe {
+                img.modify_inplace(|src, dst| -> Result<()> {
+                    opencv::imgproc::cvt_color(src, dst, opencv::imgproc::COLOR_BGR2RGB, 0)
+                        .map_err(|e| anyhow!("Failed to convert BGR to RGB, {}", e))
+                })?;
+            }
+
             let rows = img.rows();
             let cols = img.cols();
 
@@ -125,6 +132,13 @@ pub async fn remap_color(
                         pixel[2] = new_color[2];
                     }
                 }
+            }
+
+            unsafe {
+                img.modify_inplace(|src, dst| -> Result<()> {
+                    opencv::imgproc::cvt_color(src, dst, opencv::imgproc::COLOR_RGB2BGR, 0)
+                        .map_err(|e| anyhow!("Failed to convert RGB to BGR, {}", e))
+                })?;
             }
 
             imwrite(
