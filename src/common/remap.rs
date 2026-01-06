@@ -594,9 +594,7 @@ pub async fn rgb2class(dataset_path: &str, rgb_list: &str) -> Result<()> {
         });
     }
     while let Some(result) = threads.join_next().await {
-        if let Err(err) = result {
-            bail!("{:?}", err);
-        }
+        result??;
     }
 
     std::mem::drop(header_span_enter);
